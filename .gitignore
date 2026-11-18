@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.superpowers/sdd/
+.DS_Store

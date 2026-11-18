@@ -1,0 +1,85 @@
+import { describe, expect, test } from "bun:test";
+import {
+  messageHtmlToMarkdown,
+  normalizeChannelName,
+  parseChannelPageHtml,
+} from "../src/parser";
+
+describe("normalizeChannelName", () => {
+  test("strips @ and t.me URLs", () => {
+    expect(normalizeChannelName("@my_channel")).toBe("my_channel");
+    expect(normalizeChannelName("https://t.me/s/my_channel?before=10")).toBe("my_channel");
+    expect(normalizeChannelName("https://t.me/my_channel/42")).toBe("my_channel");
+  });
+});
+
+describe("messageHtmlToMarkdown", () => {
+  test("converts br, formatting, hashtags, protocol-relative URLs, and parenthesized URLs", () => {
+    const html = [
+      `<b>Hello</b> <i>world</i>!<br/>`,
+      `Check <a href="https://en.wikipedia.org/wiki/Rust_(programming_language)">Rust Wiki</a> `,
+      `and <a href="https://example.com/very/long/path/to/article">https://example.com/very/long/…</a> `,
+      `and <a href="//cdn.example.com/file.pdf">PDF</a> `,
+      `<a href="?q=%23golang">#golang</a>`,
+    ].join("");
+
+    const md = messageHtmlToMarkdown(html);
+    expect(md).toContain("**Hello** *world*!");
+    expect(md).toMatch(/\[Rust Wiki\]\(https:\/\/en\.wikipedia\.org\/wiki\/Rust_\\?\(programming_language\\?\)\)/);
+    expect(md).toContain("https://example.com/very/long/path/to/article");
+    expect(md).not.toContain("https://example.com/very/long/…");
+    expect(md).toContain("[PDF](https://cdn.example.com/file.pdf)");
+    expect(md).toContain("#golang");
+    expect(md).not.toContain("?q=%23golang");
+  });
+});
+
+describe("parseChannelPageHtml", () => {
+  test("extracts text posts, media-only posts, and skips service messages without id/date", () => {
+    const samplePage = `
+      <div class="tgme_widget_message_wrap">
+        <div class="tgme_widget_message service_message" data-post="demo/1">
+          <div class="tgme_widget_message_service_body">Channel created</div>
+        </div>
+      </div>
+      <div class="tgme_widget_message_wrap">
+        <div class="tgme_widget_message" data-post="demo/2">
+          <div class="tgme_widget_message_bubble">
+            <div class="tgme_widget_message_text js-message_text">First post with <a href="https://example.org">link</a></div>
+            <div class="tgme_widget_message_footer">
+              <a class="tgme_widget_message_date" href="https://t.me/demo/2">
+                <time datetime="2024-05-01T10:00:00+00:00">May 1</time>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="tgme_widget_message_wrap">
+        <div class="tgme_widget_message" data-post="demo/3">
+          <div class="tgme_widget_message_bubble">
+            <div class="tgme_widget_message_photo_wrap"></div>
+            <div class="tgme_widget_message_footer">
+              <a class="tgme_widget_message_date" href="https://t.me/demo/3">
+                <time datetime="2024-05-02T12:00:00+00:00">May 2</time>
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const posts = parseChannelPageHtml(samplePage, "demo");
+    expect(posts).toEqual([
+      {
+        id: 2,
+        date: "2024-05-01T10:00:00+00:00",
+        text: "First post with [link](https://example.org)",
+      },
+      {
+        id: 3,
+        date: "2024-05-02T12:00:00+00:00",
+        text: "",
+      },
+    ]);
+  });
+});

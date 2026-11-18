@@ -1,0 +1,26 @@
+{
+  "name": "lucky",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "scrape": "bun run src/cli.ts scrape",
+    "build": "bun run src/cli.ts build",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "hast-util-select": "^6.0.4",
+    "hast-util-to-html": "^9.0.6",
+    "hast-util-to-text": "^4.0.3",
+    "rehype-parse": "^9.0.1",
+    "rehype-remark": "^10.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
+    "unified": "^11.0.5",
+    "unist-util-visit": "^5.2.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.4"
+  }
+}
