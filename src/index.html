@@ -1,17 +1,4 @@
-import type { ChannelSummary, LuckyMode } from "./types";
-
-export function renderIndexHtml(config: {
-  defaultChannel: string | null;
-  defaultMode: LuckyMode;
-  channels: ChannelSummary[];
-}): string {
-  const serializedConfig = JSON.stringify({
-    defaultChannel: config.defaultChannel,
-    defaultMode: config.defaultMode,
-    channels: config.channels,
-  }).replace(/</g, "\\u003c");
-
-  return `<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
@@ -229,7 +216,7 @@ export function renderIndexHtml(config: {
   </main>
 
   <script>
-    window.__LUCKY_CONFIG__ = ${serializedConfig};
+    window.__LUCKY_CONFIG__ = __LUCKY_CONFIG_JSON__;
 
     (async function () {
       const cfg = window.__LUCKY_CONFIG__ || { defaultChannel: null, defaultMode: "post", channels: [] };
@@ -398,5 +385,3 @@ export function renderIndexHtml(config: {
   </script>
 </body>
 </html>
-`;
-}

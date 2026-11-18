@@ -10,7 +10,22 @@ import type {
   LuckyConfig,
   LuckyMode,
 } from "./types";
-import { renderIndexHtml } from "./web";
+const INDEX_HTML_TEMPLATE_PATH = new URL("./index.html", import.meta.url);
+
+export async function renderIndexHtml(config: {
+  defaultChannel: string | null;
+  defaultMode: LuckyMode;
+  channels: ChannelSummary[];
+}): Promise<string> {
+  const template = await readFile(INDEX_HTML_TEMPLATE_PATH, "utf8");
+  const serializedConfig = JSON.stringify({
+    defaultChannel: config.defaultChannel,
+    defaultMode: config.defaultMode,
+    channels: config.channels,
+  }).replace(/</g, "\\u003c");
+
+  return template.replace("__LUCKY_CONFIG_JSON__", () => serializedConfig);
+}
 
 export interface BuildOptions {
   dataDir?: string;
@@ -114,7 +129,7 @@ export async function buildSite(options: BuildOptions = {}): Promise<BuildResult
     fileConfig.defaultMode ??
     "post";
 
-  const html = renderIndexHtml({
+  const html = await renderIndexHtml({
     defaultChannel,
     defaultMode,
     channels: summaries,
