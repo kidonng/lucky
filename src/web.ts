@@ -1,0 +1,402 @@
+import type { ChannelSummary, LuckyMode } from "./types";
+
+export function renderIndexHtml(config: {
+  defaultChannel: string | null;
+  defaultMode: LuckyMode;
+  channels: ChannelSummary[];
+}): string {
+  const serializedConfig = JSON.stringify({
+    defaultChannel: config.defaultChannel,
+    defaultMode: config.defaultMode,
+    channels: config.channels,
+  }).replace(/</g, "\\u003c");
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Telegram 频道手气不错 · I'm Feeling Lucky</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #e2e8f0;
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+      --surface: #f1f5f9;
+      --warn-bg: #fffbeb;
+      --warn-text: #b45309;
+      --warn-border: #fde68a;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1120;
+        --card: #111827;
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --border: #1e293b;
+        --accent: #38bdf8;
+        --accent-hover: #0ea5e9;
+        --surface: #1e293b;
+        --warn-bg: #451a03;
+        --warn-text: #fcd34d;
+        --warn-border: #78350f;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+    .card {
+      width: 100%;
+      max-width: 460px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.75rem;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08);
+    }
+    h1 {
+      margin: 0 0 0.35rem;
+      font-size: 1.35rem;
+      font-weight: 700;
+    }
+    p.sub {
+      margin: 0 0 1.25rem;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+    .notice {
+      padding: 0.85rem 1rem;
+      border-radius: 10px;
+      background: var(--warn-bg);
+      border: 1px solid var(--warn-border);
+      color: var(--warn-text);
+      font-size: 0.9rem;
+      margin-bottom: 1.15rem;
+      display: none;
+    }
+    .field {
+      margin-bottom: 1.1rem;
+    }
+    .field label.title {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 0.45rem;
+      color: var(--muted);
+    }
+    select, input[type="text"] {
+      width: 100%;
+      padding: 0.65rem 0.8rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+    .modes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.6rem;
+    }
+    .mode-option {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.4rem;
+      padding: 0.65rem 0.8rem;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      cursor: pointer;
+      font-size: 0.92rem;
+      font-weight: 500;
+      user-select: none;
+    }
+    .mode-option input {
+      margin: 0;
+    }
+    button.primary {
+      width: 100%;
+      padding: 0.8rem 1rem;
+      border: none;
+      border-radius: 10px;
+      background: var(--accent);
+      color: #0f172a;
+      font-weight: 700;
+      font-size: 1rem;
+      cursor: pointer;
+      margin-top: 0.4rem;
+      transition: background 0.15s ease;
+    }
+    button.primary:hover {
+      background: var(--accent-hover);
+    }
+    .share {
+      margin-top: 1.35rem;
+      padding-top: 1.1rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .share-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      margin-top: 0.45rem;
+      padding: 0.45rem 0.65rem;
+      border-radius: 8px;
+      background: var(--surface);
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      overflow-x: auto;
+    }
+    .share-row a {
+      color: var(--accent);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    #redirect-view {
+      text-align: center;
+      padding: 0.5rem 0;
+    }
+    #redirect-view a {
+      color: var(--accent);
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div id="redirect-view" style="display:none;">
+      <h1>🎲 正在跳转…</h1>
+      <p class="sub" id="redirect-status">正在为你抽取手气不错目标…</p>
+      <p><a id="fallback-link" href="#" rel="noreferrer">如果未自动跳转，请点击这里</a></p>
+    </div>
+
+    <div id="ui-view" style="display:none;">
+      <h1>🎲 Telegram 频道手气不错</h1>
+      <p class="sub">随机跳转到频道历史帖子，或直接开启帖中分享的盲盒链接。</p>
+      <div id="notice-box" class="notice"></div>
+
+      <div class="field">
+        <label class="title" for="channel-select">频道 (Channel)</label>
+        <select id="channel-select"></select>
+      </div>
+
+      <div class="field">
+        <label class="title">模式 (Mode)</label>
+        <div class="modes">
+          <label class="mode-option">
+            <input type="radio" name="lucky-mode" value="post" checked />
+            <span>随机帖子</span>
+          </label>
+          <label class="mode-option">
+            <input type="radio" name="lucky-mode" value="link" />
+            <span>帖中链接</span>
+          </label>
+        </div>
+      </div>
+
+      <button type="button" class="primary" id="lucky-btn">🎲 手气不错 (I'm Feeling Lucky)</button>
+
+      <div class="share" id="share-section">
+        <div>直跳分享链接（放入频道简介或发给朋友）：</div>
+        <div class="share-row">
+          <span>随机帖子：</span>
+          <a id="share-post-link" href="#"></a>
+        </div>
+        <div class="share-row">
+          <span>帖中链接：</span>
+          <a id="share-link-link" href="#"></a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    window.__LUCKY_CONFIG__ = ${serializedConfig};
+
+    (async function () {
+      const cfg = window.__LUCKY_CONFIG__ || { defaultChannel: null, defaultMode: "post", channels: [] };
+      const params = new URLSearchParams(window.location.search);
+      const rawChannel = params.get("channel") || params.get("c");
+      const rawMode = params.get("mode") || params.get("m");
+      const forceUi = params.get("ui") === "1";
+
+      const fallbackSingle = Array.isArray(cfg.channels) && cfg.channels.length === 1 ? cfg.channels[0].channel : null;
+      const resolvedChannel = rawChannel || cfg.defaultChannel || fallbackSingle || null;
+      const resolvedMode = (rawMode === "link" || rawMode === "post")
+        ? rawMode
+        : (cfg.defaultMode === "link" ? "link" : "post");
+
+      const redirectView = document.getElementById("redirect-view");
+      const uiView = document.getElementById("ui-view");
+      const noticeBox = document.getElementById("notice-box");
+      const channelSelect = document.getElementById("channel-select");
+      const luckyBtn = document.getElementById("lucky-btn");
+      const fallbackLink = document.getElementById("fallback-link");
+      const redirectStatus = document.getElementById("redirect-status");
+      const sharePostLink = document.getElementById("share-post-link");
+      const shareLinkLink = document.getElementById("share-link-link");
+
+      const cache = Object.create(null);
+      async function loadChannelData(ch) {
+        if (cache[ch]) return cache[ch];
+        const res = await fetch("./data/" + encodeURIComponent(ch) + ".json");
+        if (!res.ok) throw new Error("无法加载频道数据: " + ch);
+        const data = await res.json();
+        cache[ch] = data;
+        return data;
+      }
+
+      function pickRandom(arr) {
+        if (!Array.isArray(arr) || arr.length === 0) return null;
+        const idx = Math.floor(Math.random() * arr.length);
+        return arr[idx];
+      }
+
+      function pickTargetUrl(data, mode) {
+        if (mode === "link") {
+          return pickRandom(data.links);
+        }
+        const postId = pickRandom(data.posts);
+        return postId ? ("https://t.me/" + data.channel + "/" + postId) : null;
+      }
+
+      function showNotice(msg) {
+        if (!msg) {
+          noticeBox.style.display = "none";
+          noticeBox.textContent = "";
+          return;
+        }
+        noticeBox.textContent = msg;
+        noticeBox.style.display = "block";
+      }
+
+      function getSelectedMode() {
+        const checked = document.querySelector('input[name="lucky-mode"]:checked');
+        return checked && checked.value === "link" ? "link" : "post";
+      }
+
+      function setSelectedMode(m) {
+        const radio = document.querySelector('input[name="lucky-mode"][value="' + m + '"]');
+        if (radio) radio.checked = true;
+      }
+
+      function updateShareLinks() {
+        const ch = channelSelect.value;
+        const base = window.location.origin + window.location.pathname;
+        if (!ch) {
+          sharePostLink.textContent = "-";
+          sharePostLink.href = "#";
+          shareLinkLink.textContent = "-";
+          shareLinkLink.href = "#";
+          return;
+        }
+        const postUrl = base + "?c=" + encodeURIComponent(ch) + "&m=post";
+        const linkUrl = base + "?c=" + encodeURIComponent(ch) + "&m=link";
+        sharePostLink.textContent = "?c=" + ch + "&m=post";
+        sharePostLink.href = postUrl;
+        shareLinkLink.textContent = "?c=" + ch + "&m=link";
+        shareLinkLink.href = linkUrl;
+      }
+
+      function renderUi(initialChannel, initialMode, noticeMessage) {
+        redirectView.style.display = "none";
+        uiView.style.display = "block";
+        showNotice(noticeMessage || "");
+
+        channelSelect.innerHTML = "";
+        const list = Array.isArray(cfg.channels) ? cfg.channels : [];
+        if (list.length === 0 && initialChannel) {
+          list.push({ channel: initialChannel, postCount: 0, linkCount: 0 });
+        }
+
+        for (const item of list) {
+          const opt = document.createElement("option");
+          opt.value = item.channel;
+          opt.textContent = "@" + item.channel + " (" + item.postCount + " 帖 / " + item.linkCount + " 链接)";
+          if (item.channel === initialChannel) opt.selected = true;
+          channelSelect.appendChild(opt);
+        }
+
+        setSelectedMode(initialMode);
+        updateShareLinks();
+      }
+
+      channelSelect.addEventListener("change", updateShareLinks);
+
+      luckyBtn.addEventListener("click", async function () {
+        const ch = channelSelect.value;
+        const m = getSelectedMode();
+        if (!ch) {
+          showNotice("请先选择一个频道。");
+          return;
+        }
+        try {
+          const data = await loadChannelData(ch);
+          const target = pickTargetUrl(data, m);
+          if (!target) {
+            showNotice(m === "link" ? "该频道暂无可跳转的帖中链接，请切换到「随机帖子」模式。" : "该频道暂无帖子数据。");
+            if (m === "link" && Array.isArray(data.posts) && data.posts.length > 0) {
+              setSelectedMode("post");
+            }
+            return;
+          }
+          window.location.assign(target);
+        } catch (err) {
+          showNotice(err && err.message ? err.message : "加载频道数据失败");
+        }
+      });
+
+      if (resolvedChannel && !forceUi) {
+        redirectView.style.display = "block";
+        try {
+          const data = await loadChannelData(resolvedChannel);
+          const target = pickTargetUrl(data, resolvedMode);
+          if (!target) {
+            const fallbackMode = resolvedMode === "link" ? "post" : resolvedMode;
+            renderUi(
+              resolvedChannel,
+              fallbackMode,
+              resolvedMode === "link"
+                ? "频道 @" + resolvedChannel + " 中没有提取到外部链接，可点击下方按钮随机看帖。"
+                : "频道 @" + resolvedChannel + " 暂无可跳转的帖子数据。"
+            );
+            return;
+          }
+          fallbackLink.href = target;
+          fallbackLink.textContent = target;
+          redirectStatus.textContent = "正在跳转到 " + target;
+          window.location.replace(target);
+        } catch (err) {
+          renderUi(
+            resolvedChannel,
+            resolvedMode,
+            err && err.message ? err.message : "无法加载频道数据"
+          );
+        }
+      } else {
+        renderUi(resolvedChannel, resolvedMode, "");
+      }
+    })();
+  </script>
+</body>
+</html>
+`;
+}
