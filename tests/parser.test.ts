@@ -38,6 +38,11 @@ describe("messageHtmlToMarkdown", () => {
     expect(md).toContain("#golang");
     expect(md).not.toContain("?q=%23golang");
   });
+
+  test("unwraps Telegram <i class='emoji'><b>...</b></i> tags into plain emoji without hex-escaping adjacent CJK characters", () => {
+    const html = `成了<i class="emoji" style="background-image:url('//telegram.org/img/emoji/40/F09F98A3.png')"><b>🤣</b></i>。比网页版低<i class="emoji"><b>🙈</b></i>再加上`;
+    expect(messageHtmlToMarkdown(html)).toBe("成了🤣。比网页版低🙈再加上");
+  });
 });
 
 describe("parseChannelPageHtml", () => {
@@ -45,9 +50,9 @@ describe("parseChannelPageHtml", () => {
     const samplePage = `
       <div class="tgme_widget_message_wrap">
         <div class="tgme_widget_message service_message" data-post="demo/1">
-          <div class="tgme_widget_message_service_body">Channel created</div>
+          <div class="tgme_widget_message_text js-message_text">Channel created</div>
+          <time datetime="2024-05-01T09:00:00+00:00">May 1</time>
         </div>
-      </div>
       <div class="tgme_widget_message_wrap">
         <div class="tgme_widget_message" data-post="demo/2">
           <div class="tgme_widget_message_bubble">

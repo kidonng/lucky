@@ -40,7 +40,28 @@ export function normalizeChannelName(input: string): string {
 function normalizeTelegramHast() {
   return (tree: Root) => {
     visit(tree, "element", (node: Element, index, parent) => {
-      if (node.tagName !== "a" || !parent || typeof index !== "number") {
+      if (!parent || typeof index !== "number") {
+        return;
+      }
+
+      const classList = Array.isArray(node.properties?.className)
+        ? node.properties.className.map(String)
+        : typeof node.properties?.className === "string"
+          ? node.properties.className.split(/\s+/)
+          : [];
+
+      if (
+        (node.tagName === "i" && classList.includes("emoji")) ||
+        node.tagName === "tg-emoji"
+      ) {
+        parent.children.splice(index, 1, {
+          type: "text",
+          value: toText(node),
+        });
+        return index;
+      }
+
+      if (node.tagName !== "a") {
         return;
       }
 
@@ -125,6 +146,15 @@ export function parseChannelPageHtml(pageHtml: string, channel: string): Channel
   const byId = new Map<number, ChannelPost>();
 
   for (const msgNode of messageNodes) {
+    const classList = Array.isArray(msgNode.properties?.className)
+      ? msgNode.properties.className.map(String)
+      : typeof msgNode.properties?.className === "string"
+        ? msgNode.properties.className.split(/\s+/)
+        : [];
+    if (classList.includes("service_message")) {
+      continue;
+    }
+
     const dataPost = String(msgNode.properties?.dataPost ?? "").trim();
     const slashIndex = dataPost.indexOf("/");
     if (slashIndex <= 0) {
