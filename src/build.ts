@@ -99,7 +99,11 @@ export async function buildSite(options: BuildOptions = {}): Promise<BuildResult
 
   let defaultChannel: string | null = null;
   if (rawDefaultChannel && rawDefaultChannel.trim()) {
-    defaultChannel = normalizeChannelName(rawDefaultChannel);
+    const normalized = normalizeChannelName(rawDefaultChannel);
+    const matched = summaries.find(
+      (item) => item.channel.toLowerCase() === normalized.toLowerCase()
+    );
+    defaultChannel = matched ? matched.channel : normalized;
   } else if (summaries.length === 1 && summaries[0]) {
     defaultChannel = summaries[0].channel;
   }

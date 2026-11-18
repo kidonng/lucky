@@ -17,14 +17,20 @@ export function normalizeChannelName(input: string): string {
   }
 
   const withoutAt = trimmed.replace(/^@+/, "");
-  const urlMatch = withoutAt.match(
-    /^(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me)\/(?:s\/)?([a-zA-Z0-9_]+)/i
-  );
-  if (urlMatch?.[1]) {
+  if (
+    /^(?:https?:\/\/|\/)/i.test(withoutAt) ||
+    /^(?:www\.)?(?:t\.me|telegram\.me)\b/i.test(withoutAt)
+  ) {
+    const urlMatch = withoutAt.match(
+      /^(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me)\/(?:s\/)?([a-zA-Z0-9_]+)(?:[/?#]|$)/i
+    );
+    if (!urlMatch?.[1] || urlMatch[1].toLowerCase() === "s") {
+      throw new Error(`Invalid Telegram channel identifier: ${input}`);
+    }
     return urlMatch[1];
   }
 
-  const handleMatch = withoutAt.match(/^([a-zA-Z0-9_]+)/);
+  const handleMatch = withoutAt.match(/^([a-zA-Z0-9_]+)$/);
   if (!handleMatch?.[1]) {
     throw new Error(`Invalid Telegram channel identifier: ${input}`);
   }

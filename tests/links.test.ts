@@ -7,7 +7,7 @@ describe("extractLinksFromMarkdown", () => {
     const md = [
       "Read [Rust](https://en.wikipedia.org/wiki/Rust_(programming_language)) and bare https://example.com/path?a=1.",
       "Self link: https://t.me/my_chan/42 and [Self Preview](https://t.me/s/MY_CHAN?before=10) and https://telegram.me/my_chan",
-      "Other channel: https://t.me/other_chan/99",
+      "Other channel: https://t.me/other_chan/99 and prefix-neighbor https://t.me/my_chan2/5 and https://t.me/s/my_chan2",
       "Inline `https://ignored-in-code.example.com` and:\n```\nhttps://ignored-in-fence.example.com\n```",
     ].join("\n\n");
 
@@ -16,6 +16,8 @@ describe("extractLinksFromMarkdown", () => {
       "https://en.wikipedia.org/wiki/Rust_(programming_language)",
       "https://example.com/path?a=1",
       "https://t.me/other_chan/99",
+      "https://t.me/my_chan2/5",
+      "https://t.me/s/my_chan2",
     ]);
   });
 

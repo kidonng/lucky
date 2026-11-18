@@ -11,6 +11,12 @@ describe("normalizeChannelName", () => {
     expect(normalizeChannelName("https://t.me/s/my_channel?before=10")).toBe("my_channel");
     expect(normalizeChannelName("https://t.me/my_channel/42")).toBe("my_channel");
   });
+
+  test("rejects handle-less Telegram URLs and non-Telegram URLs", () => {
+    expect(() => normalizeChannelName("https://t.me/")).toThrow(/Invalid Telegram channel/i);
+    expect(() => normalizeChannelName("https://t.me/s/")).toThrow(/Invalid Telegram channel/i);
+    expect(() => normalizeChannelName("https://example.com/foo")).toThrow(/Invalid Telegram channel/i);
+  });
 });
 
 describe("messageHtmlToMarkdown", () => {
