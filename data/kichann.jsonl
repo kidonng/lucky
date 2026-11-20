@@ -2164,3 +2164,4 @@
 {"id":2572,"date":"2026-11-18T15:48:33+00:00","text":"```\n$ gh repo create lucky --source .\n`--public`, `--private`, or `--internal` required when not running interactively\n```\n\n*not*?"}
 {"id":2573,"date":"2026-11-19T07:23:59+00:00","text":"<https://www.youtube.com/watch?v=QjcOK2T0lPo>"}
 {"id":2574,"date":"2026-11-19T15:26:18+00:00","text":"Let's See Who This Really Is\\\n<https://azure.microsoft.com/en-us/products/ai-foundry>"}
+{"id":2576,"date":"2026-11-20T14:11:53+00:00","text":"> // pub const NiB = \"Some people say my love cannot be true\";\n\n<https://github.com/tigerbeetle/tigerbeetle/blob/a2a3c7064519e08233abe26c54a43fca2f9ad9bc/src/stdx/stdx.zig#L71>"}
