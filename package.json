@@ -3,10 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "web"
+  ],
   "scripts": {
+    "dev": "bun --cwd web dev",
     "scrape": "bun run src/cli.ts scrape",
     "build": "bun run src/cli.ts build",
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "bun check && bun check -p web"
   },
   "dependencies": {
     "@effect/platform-bun": "^4.1.5",
@@ -23,6 +28,7 @@
     "unist-util-visit": "^5.2.0"
   },
   "devDependencies": {
-    "@types/bun": "^1.4.4"
+    "@types/bun": "^1.4.4",
+    "@types/hast": "^3.0.5"
   }
 }

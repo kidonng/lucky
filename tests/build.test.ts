@@ -259,7 +259,7 @@ describe("buildSite", () => {
     expect(existsSync(outDir)).toBe(false);
   });
 
-  test("built index.html inline script executes redirects for post and link modes and falls back when link pool is empty", async () => {
+  test("built index.html is a standard static Tailwind+Preact site with emitted CSS/JS assets and embedded config JSON", async () => {
     const dataDir = join(tempDir, "data");
     const outDir = join(tempDir, "dist");
     const configPath = join(tempDir, "lucky.config.json");
@@ -271,11 +271,6 @@ describe("buildSite", () => {
           date: "2024-01-01T00:00:00Z",
           text: "Hello https://a.example.com/target",
         },
-      ]),
-    );
-    await runWithBun(
-      writeChannelPosts(join(dataDir, "nolinks.jsonl"), [
-        { id: 20, date: "2024-01-02T00:00:00Z", text: "Just plain text" },
       ]),
     );
 
@@ -290,121 +285,23 @@ describe("buildSite", () => {
     );
 
     const html = await readFile(join(outDir, "index.html"), "utf8");
-    const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
-    expect(scriptMatch?.[1]).toBeDefined();
-    const scriptBody = scriptMatch![1]!;
+    expect(html).not.toContain("__LUCKY_CONFIG_JSON__");
 
-    interface StubElement {
-      style: { display: string };
-      textContent: string;
-      innerHTML: string;
-      href: string;
-      value: string;
-      checked: boolean;
-      selected?: boolean;
-      appendChild(child: StubElement): void;
-      addEventListener(): void;
-    }
+    const cssMatch = html.match(/<link\b[^>]*\bhref="\.\/([^"]+\.css)"/);
+    const jsMatch = html.match(/<script\b[^>]*\bsrc="\.\/([^"]+\.js)"/);
+    expect(cssMatch?.[1]).toBeDefined();
+    expect(jsMatch?.[1]).toBeDefined();
+    expect(existsSync(join(outDir, cssMatch![1]!))).toBe(true);
+    expect(existsSync(join(outDir, jsMatch![1]!))).toBe(true);
 
-    async function runFrontendScript(search: string) {
-      let replacedUrl: string | null = null;
-      const elements: Record<string, StubElement> = {};
-      const makeEl = (): StubElement => ({
-        style: { display: "none" },
-        textContent: "",
-        innerHTML: "",
-        href: "",
-        value: "",
-        checked: false,
-        appendChild(child: StubElement) {
-          if (!this.value || child.selected) {
-            this.value = child.value;
-          }
-        },
-        addEventListener() {},
-      });
-
-      for (const id of [
-        "redirect-view",
-        "ui-view",
-        "notice-box",
-        "channel-select",
-        "lucky-btn",
-        "fallback-link",
-        "redirect-status",
-        "share-post-link",
-        "share-link-link",
-      ]) {
-        elements[id] = makeEl();
-      }
-
-      const radios = {
-        post: { value: "post", checked: true },
-        link: { value: "link", checked: false },
-      };
-
-      const fakeWindow = {
-        __LUCKY_CONFIG__: undefined as unknown,
-        location: {
-          search,
-          origin: "https://lucky.example.com",
-          pathname: "/",
-          replace(url: string) {
-            replacedUrl = url;
-          },
-          assign(url: string) {
-            replacedUrl = url;
-          },
-        },
-      };
-
-      const fakeDocument = {
-        getElementById(id: string): StubElement {
-          return elements[id] ?? makeEl();
-        },
-        createElement(): StubElement {
-          return makeEl();
-        },
-        querySelector(sel: string) {
-          if (sel.includes('value="post"')) return radios.post;
-          if (sel.includes('value="link"')) return radios.link;
-          if (sel.includes(":checked"))
-            return radios.link.checked ? radios.link : radios.post;
-          return null;
-        },
-      };
-
-      const fakeFetch = async (relUrl: string) => {
-        const fileName = relUrl.replace(/^\.\/data\//, "");
-        const diskPath = join(outDir, "data", decodeURIComponent(fileName));
-        try {
-          const body = await readFile(diskPath, "utf8");
-          return { ok: true, json: async () => JSON.parse(body) as unknown };
-        } catch {
-          return { ok: false, status: 404, json: async () => ({}) };
-        }
-      };
-
-      const awaitableScript = scriptBody.replace(
-        "(async function () {",
-        "return (async function () {",
-      );
-      const fn = new Function("window", "document", "fetch", awaitableScript);
-      await fn(fakeWindow, fakeDocument, fakeFetch);
-      return { replacedUrl: replacedUrl as string | null, elements, radios };
-    }
-
-    const postRun = await runFrontendScript("");
-    expect(postRun.replacedUrl).toBe("https://t.me/alpha/10");
-
-    const linkRun = await runFrontendScript("?c=alpha&m=link");
-    expect(linkRun.replacedUrl).toBe("https://a.example.com/target");
-
-    const emptyLinkRun = await runFrontendScript("?c=nolinks&m=link");
-    expect(emptyLinkRun.replacedUrl).toBeNull();
-    expect(emptyLinkRun.elements["ui-view"]?.style.display).toBe("block");
-    expect(emptyLinkRun.elements["notice-box"]?.textContent).toContain(
-      "没有提取到外部链接",
+    const configMatch = html.match(
+      /<script id="lucky-config" type="application\/json">([\s\S]*?)<\/script>/,
     );
+    expect(configMatch?.[1]).toBeDefined();
+    expect(JSON.parse(configMatch![1]!)).toEqual({
+      defaultChannel: "alpha",
+      defaultMode: "post",
+      channels: [{ channel: "alpha", postCount: 1, linkCount: 1 }],
+    });
   });
 });

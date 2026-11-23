@@ -1,5 +1,5 @@
 import { Config, Effect, FileSystem, Option, Path, Schema } from "effect";
-import rawIndexHtmlTemplate from "./index.html" with { type: "text" };
+import { buildWeb, type WebBundle } from "../web/build";
 import { extractChannelLinks } from "./links";
 import { normalizeChannelName } from "./parser";
 import { readChannelPosts } from "./storage";
@@ -11,9 +11,12 @@ import {
   type LuckyConfig,
   LuckyConfigJson,
   type LuckyMode,
+  type LuckyRuntimeConfig,
+  LuckyRuntimeConfigJson,
 } from "./types";
 
 const decodeLuckyConfigJson = Schema.decodeUnknownEffect(LuckyConfigJson);
+const encodeLuckyRuntimeConfigJson = Schema.encodeSync(LuckyRuntimeConfigJson);
 
 export interface BuildOptions {
   dataDir?: string;
@@ -60,25 +63,28 @@ export const loadLuckyConfig = Effect.fn("build.loadLuckyConfig")(function* (
   );
 });
 
-// bun-types only enables `with { type: "text" }` module typing on TS >= 7.1; older
-// type checkers fall back to `*.html` -> `HTMLBundle`, while Bun loads a string.
-const indexHtmlTemplate = rawIndexHtmlTemplate as unknown as string;
+let cachedWebBundle: Promise<WebBundle> | undefined;
 
-export function renderIndexHtml(config: {
-  defaultChannel: string | null;
-  defaultMode: LuckyMode;
-  channels: ReadonlyArray<ChannelSummary>;
-}): string {
-  const serializedConfig = JSON.stringify({
-    defaultChannel: config.defaultChannel,
-    defaultMode: config.defaultMode,
-    channels: config.channels,
-  }).replace(/</g, "\\u003c");
+function getWebBundle(): Promise<WebBundle> {
+  if (!cachedWebBundle) {
+    cachedWebBundle = buildWeb().catch((err) => {
+      cachedWebBundle = undefined;
+      throw err;
+    });
+  }
+  return cachedWebBundle;
+}
 
-  return indexHtmlTemplate.replace(
-    "__LUCKY_CONFIG_JSON__",
-    () => serializedConfig,
+export function renderIndexHtml(
+  config: LuckyRuntimeConfig,
+  template: string,
+): string {
+  const serializedConfig = encodeLuckyRuntimeConfigJson(config).replace(
+    /</g,
+    "\\u003c",
   );
+
+  return template.replace("__LUCKY_CONFIG_JSON__", () => serializedConfig);
 }
 
 export const buildSite = Effect.fn("build.buildSite")(function* (
@@ -168,14 +174,24 @@ export const buildSite = Effect.fn("build.buildSite")(function* (
     defaultChannel = summaries[0].channel;
   }
 
-  const html = renderIndexHtml({
-    defaultChannel,
-    defaultMode,
-    channels: summaries,
-  });
+  const webBundle = yield* Effect.promise(() => getWebBundle());
+  const html = renderIndexHtml(
+    {
+      defaultChannel,
+      defaultMode,
+      channels: summaries,
+    },
+    webBundle.indexHtml,
+  );
 
   const outDataDir = path.join(outDir, "data");
   yield* fs.makeDirectory(outDataDir, { recursive: true });
+
+  for (const asset of webBundle.assets) {
+    const assetPath = path.join(outDir, asset.relativePath);
+    yield* fs.makeDirectory(path.dirname(assetPath), { recursive: true });
+    yield* fs.writeFile(assetPath, asset.bytes);
+  }
 
   for (const indexData of channelIndexes) {
     yield* fs.writeFileString(

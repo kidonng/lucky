@@ -28,6 +28,15 @@ export const ChannelSummary = Schema.Struct({
 });
 export type ChannelSummary = (typeof ChannelSummary)["Type"];
 
+export const LuckyRuntimeConfig = Schema.Struct({
+  defaultChannel: Schema.NullOr(Schema.String),
+  defaultMode: LuckyMode,
+  channels: Schema.Array(ChannelSummary),
+});
+export type LuckyRuntimeConfig = (typeof LuckyRuntimeConfig)["Type"];
+
+export const LuckyRuntimeConfigJson = Schema.fromJsonString(LuckyRuntimeConfig);
+
 export const LuckyConfig = Schema.Struct({
   channels: Schema.optional(Schema.Array(Schema.String)),
   defaultChannel: Schema.optional(Schema.String),
