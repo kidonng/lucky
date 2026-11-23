@@ -1,4 +1,5 @@
 import { Config, Effect, FileSystem, Option, Path, Schema } from "effect";
+import rawIndexHtmlTemplate from "./index.html" with { type: "text" };
 import { extractChannelLinks } from "./links";
 import { normalizeChannelName } from "./parser";
 import { readChannelPosts } from "./storage";
@@ -12,7 +13,6 @@ import {
   type LuckyMode,
 } from "./types";
 
-const INDEX_HTML_TEMPLATE_URL = new URL("./index.html", import.meta.url);
 const decodeLuckyConfigJson = Schema.decodeUnknownEffect(LuckyConfigJson);
 
 export interface BuildOptions {
@@ -60,26 +60,26 @@ export const loadLuckyConfig = Effect.fn("build.loadLuckyConfig")(function* (
   );
 });
 
-export const renderIndexHtml = Effect.fn("build.renderIndexHtml")(
-  function* (config: {
-    defaultChannel: string | null;
-    defaultMode: LuckyMode;
-    channels: ReadonlyArray<ChannelSummary>;
-  }) {
-    const fs = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
-    const templatePath = yield* path.fromFileUrl(INDEX_HTML_TEMPLATE_URL);
-    const template = yield* fs.readFileString(templatePath);
+// bun-types only enables `with { type: "text" }` module typing on TS >= 7.1; older
+// type checkers fall back to `*.html` -> `HTMLBundle`, while Bun loads a string.
+const indexHtmlTemplate = rawIndexHtmlTemplate as unknown as string;
 
-    const serializedConfig = JSON.stringify({
-      defaultChannel: config.defaultChannel,
-      defaultMode: config.defaultMode,
-      channels: config.channels,
-    }).replace(/</g, "\\u003c");
+export function renderIndexHtml(config: {
+  defaultChannel: string | null;
+  defaultMode: LuckyMode;
+  channels: ReadonlyArray<ChannelSummary>;
+}): string {
+  const serializedConfig = JSON.stringify({
+    defaultChannel: config.defaultChannel,
+    defaultMode: config.defaultMode,
+    channels: config.channels,
+  }).replace(/</g, "\\u003c");
 
-    return template.replace("__LUCKY_CONFIG_JSON__", () => serializedConfig);
-  },
-);
+  return indexHtmlTemplate.replace(
+    "__LUCKY_CONFIG_JSON__",
+    () => serializedConfig,
+  );
+}
 
 export const buildSite = Effect.fn("build.buildSite")(function* (
   options: BuildOptions = {},
@@ -168,7 +168,7 @@ export const buildSite = Effect.fn("build.buildSite")(function* (
     defaultChannel = summaries[0].channel;
   }
 
-  const html = yield* renderIndexHtml({
+  const html = renderIndexHtml({
     defaultChannel,
     defaultMode,
     channels: summaries,
