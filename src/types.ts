@@ -43,7 +43,11 @@ export class InvalidChannelError extends Schema.TaggedError<InvalidChannelError>
     input: Schema.String,
     cause: Schema.Unknown,
   }
-) {}
+) {
+  override get message(): string {
+    return `Invalid Telegram channel identifier: ${JSON.stringify(this.input)}`;
+  }
+}
 
 export class ConfigParseError extends Schema.TaggedError<ConfigParseError>()(
   "ConfigParseError",
@@ -51,7 +55,11 @@ export class ConfigParseError extends Schema.TaggedError<ConfigParseError>()(
     path: Schema.String,
     cause: Schema.Unknown,
   }
-) {}
+) {
+  override get message(): string {
+    return `Failed to parse config at ${this.path}: ${String(this.cause)}`;
+  }
+}
 
 export class StorageDecodeError extends Schema.TaggedError<StorageDecodeError>()(
   "StorageDecodeError",
@@ -60,7 +68,11 @@ export class StorageDecodeError extends Schema.TaggedError<StorageDecodeError>()
     line: Schema.Int,
     cause: Schema.Unknown,
   }
-) {}
+) {
+  override get message(): string {
+    return `Failed to decode JSONL post at ${this.path}:${this.line}: ${String(this.cause)}`;
+  }
+}
 
 export class ScrapeHttpError extends Schema.TaggedError<ScrapeHttpError>()(
   "ScrapeHttpError",
@@ -70,7 +82,13 @@ export class ScrapeHttpError extends Schema.TaggedError<ScrapeHttpError>()(
     retryable: Schema.Boolean,
     cause: Schema.Unknown,
   }
-) {}
+) {
+  override get message(): string {
+    return this.status !== undefined
+      ? `HTTP ${this.status} fetching ${this.url}`
+      : `Network error fetching ${this.url}: ${String(this.cause)}`;
+  }
+}
 
 export class EmptyFullScrapeError extends Schema.TaggedError<EmptyFullScrapeError>()(
   "EmptyFullScrapeError",
@@ -78,11 +96,19 @@ export class EmptyFullScrapeError extends Schema.TaggedError<EmptyFullScrapeErro
     channel: Schema.String,
     existingCount: Schema.Int,
   }
-) {}
+) {
+  override get message(): string {
+    return `Full scrape for channel "${this.channel}" returned no posts; refusing to overwrite existing ${this.existingCount} posts`;
+  }
+}
 
 export class NoChannelsConfiguredError extends Schema.TaggedError<NoChannelsConfiguredError>()(
   "NoChannelsConfiguredError",
   {
     configPath: Schema.String,
   }
-) {}
+) {
+  override get message(): string {
+    return `No channels specified. Pass channel names to \`bun run scrape <channel>\` or configure \`channels\` in ${this.configPath}.`;
+  }
+}

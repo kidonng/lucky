@@ -30,6 +30,16 @@ export interface BuildResult {
   outDir: string;
 }
 
+const normalizeChannelEffect = (input: string) =>
+  Effect.try({
+    try: () => normalizeChannelName(input),
+    catch: (cause) =>
+      new InvalidChannelError({
+        input,
+        cause,
+      }),
+  });
+
 export const loadLuckyConfig = Effect.fn("build.loadLuckyConfig")(
   function*(configPath = "lucky.config.json") {
     const fs = yield* FileSystem.FileSystem;
@@ -80,75 +90,13 @@ export const buildSite = Effect.fn("build.buildSite")(
     const outDir = options.outDir ?? "dist";
     const fileConfig = yield* loadLuckyConfig(options.configPath);
 
-    const outDataDir = path.join(outDir, "data");
-    yield* fs.makeDirectory(outDataDir, { recursive: true });
-
-    const entries = (yield* fs.exists(dataDir))
-      ? yield* fs.readDirectory(dataDir)
-      : [];
-    const jsonlFiles = entries
-      .filter((name) => name.endsWith(".jsonl"))
-      .sort((a, b) => a.localeCompare(b));
-
-    const summaries: Array<ChannelSummary> = [];
-
-    for (const fileName of jsonlFiles) {
-      const channel = path.basename(fileName, ".jsonl");
-      const posts = yield* readChannelPosts(path.join(dataDir, fileName));
-      const postIds = posts.map((p) => p.id);
-      const links = extractChannelLinks(posts, channel);
-
-      const indexData: ChannelIndex = {
-        channel,
-        postCount: postIds.length,
-        linkCount: links.length,
-        posts: postIds,
-        links,
-      };
-
-      yield* fs.writeFileString(
-        path.join(outDataDir, `${channel}.json`),
-        `${JSON.stringify(indexData, null, 2)}\n`
-      );
-
-      summaries.push({
-        channel,
-        postCount: postIds.length,
-        linkCount: links.length,
-      });
-    }
-
-    yield* fs.writeFileString(
-      path.join(outDataDir, "channels.json"),
-      `${JSON.stringify(summaries, null, 2)}\n`
-    );
-
     const envDefaultChannel =
       options.defaultChannel !== undefined
         ? Option.none<string>()
         : yield* Config.option(Config.String("LUCKY_DEFAULT_CHANNEL"));
-    const rawDefaultChannel =
-      options.defaultChannel ??
-      Option.getOrUndefined(envDefaultChannel) ??
-      fileConfig.defaultChannel;
-
-    let defaultChannel: string | null = null;
-    if (rawDefaultChannel && rawDefaultChannel.trim()) {
-      const normalized = yield* Effect.try({
-        try: () => normalizeChannelName(rawDefaultChannel),
-        catch: (cause) =>
-          new InvalidChannelError({
-            input: rawDefaultChannel,
-            cause,
-          }),
-      });
-      const matched = summaries.find(
-        (item) => item.channel.toLowerCase() === normalized.toLowerCase()
-      );
-      defaultChannel = matched ? matched.channel : normalized;
-    } else if (summaries.length === 1 && summaries[0]) {
-      defaultChannel = summaries[0].channel;
-    }
+    const nonBlankEnvChannel = Option.getOrUndefined(
+      Option.filter(envDefaultChannel, (value) => value.trim().length > 0)
+    );
 
     const envDefaultMode =
       options.defaultMode !== undefined
@@ -162,11 +110,84 @@ export const buildSite = Effect.fn("build.buildSite")(
       fileConfig.defaultMode ??
       "post";
 
+    const explicitOrFallbackChannel =
+      options.defaultChannel !== undefined
+        ? options.defaultChannel
+        : nonBlankEnvChannel ??
+          (fileConfig.defaultChannel && fileConfig.defaultChannel.trim()
+            ? fileConfig.defaultChannel
+            : undefined);
+
+    const normalizedRequestedChannel =
+      explicitOrFallbackChannel !== undefined
+        ? yield* normalizeChannelEffect(explicitOrFallbackChannel)
+        : null;
+
+    const entries = (yield* fs.exists(dataDir))
+      ? yield* fs.readDirectory(dataDir)
+      : [];
+    const jsonlFiles = entries
+      .filter((name) => name.endsWith(".jsonl"))
+      .sort((a, b) => a.localeCompare(b));
+
+    const summaries: Array<ChannelSummary> = [];
+    const channelIndexes: Array<ChannelIndex> = [];
+
+    for (const fileName of jsonlFiles) {
+      const channel = yield* normalizeChannelEffect(
+        path.basename(fileName, ".jsonl")
+      );
+      const posts = yield* readChannelPosts(path.join(dataDir, fileName));
+      const postIds = posts.map((p) => p.id);
+      const links = extractChannelLinks(posts, channel);
+
+      channelIndexes.push({
+        channel,
+        postCount: postIds.length,
+        linkCount: links.length,
+        posts: postIds,
+        links,
+      });
+
+      summaries.push({
+        channel,
+        postCount: postIds.length,
+        linkCount: links.length,
+      });
+    }
+
+    let defaultChannel: string | null = null;
+    if (normalizedRequestedChannel !== null) {
+      const matched = summaries.find(
+        (item) =>
+          item.channel.toLowerCase() ===
+          normalizedRequestedChannel.toLowerCase()
+      );
+      defaultChannel = matched ? matched.channel : normalizedRequestedChannel;
+    } else if (summaries.length === 1 && summaries[0]) {
+      defaultChannel = summaries[0].channel;
+    }
+
     const html = yield* renderIndexHtml({
       defaultChannel,
       defaultMode,
       channels: summaries,
     });
+
+    const outDataDir = path.join(outDir, "data");
+    yield* fs.makeDirectory(outDataDir, { recursive: true });
+
+    for (const indexData of channelIndexes) {
+      yield* fs.writeFileString(
+        path.join(outDataDir, `${indexData.channel}.json`),
+        `${JSON.stringify(indexData, null, 2)}\n`
+      );
+    }
+
+    yield* fs.writeFileString(
+      path.join(outDataDir, "channels.json"),
+      `${JSON.stringify(summaries, null, 2)}\n`
+    );
 
     yield* fs.writeFileString(path.join(outDir, "index.html"), html);
 

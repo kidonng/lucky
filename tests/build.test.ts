@@ -1,6 +1,7 @@
 import { BunServices } from "@effect/platform-bun";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { ConfigProvider, Effect, Layer } from "effect";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -149,7 +150,7 @@ describe("buildSite", () => {
     expect(invalidEnvErr._tag).toBe("ConfigError");
   });
 
-  test("fails with InvalidChannelError when defaultChannel is invalid", async () => {
+  test("fails with InvalidChannelError when defaultChannel is invalid or whitespace, without creating outDir", async () => {
     const dataDir = join(tempDir, "data");
     const outDir = join(tempDir, "dist");
     const configPath = join(tempDir, "lucky.config.json");
@@ -165,6 +166,73 @@ describe("buildSite", () => {
       )
     );
     expect(err._tag).toBe("InvalidChannelError");
+    expect(existsSync(outDir)).toBe(false);
+
+    const blankErr = await runWithBun(
+      Effect.flip(
+        buildSite({
+          dataDir,
+          outDir,
+          configPath,
+          defaultChannel: "   ",
+        })
+      )
+    );
+    expect(blankErr._tag).toBe("InvalidChannelError");
+    expect(existsSync(outDir)).toBe(false);
+  });
+
+  test("treats blank LUCKY_DEFAULT_CHANNEL env var as unset and avoids creating outDir on invalid LUCKY_DEFAULT_MODE", async () => {
+    const dataDir = join(tempDir, "data");
+    const outDir = join(tempDir, "dist");
+    const configPath = join(tempDir, "lucky.config.json");
+
+    await writeFile(configPath, JSON.stringify({ defaultChannel: "alpha" }), "utf8");
+    await runWithBun(
+      writeChannelPosts(join(dataDir, "alpha.jsonl"), [
+        { id: 1, date: "2024-01-01T00:00:00Z", text: "Post 1" },
+      ])
+    );
+
+    const invalidModeOutDir = join(tempDir, "dist-invalid-mode");
+    const invalidEnvErr = await runWithBun(
+      Effect.flip(buildSite({ dataDir, outDir: invalidModeOutDir, configPath })),
+      ConfigProvider.layer(
+        ConfigProvider.fromEnvRecord({
+          LUCKY_DEFAULT_MODE: "invalid",
+        })
+      )
+    );
+    expect(invalidEnvErr._tag).toBe("ConfigError");
+    expect(existsSync(invalidModeOutDir)).toBe(false);
+
+    const res = await runWithBun(
+      buildSite({ dataDir, outDir, configPath }),
+      ConfigProvider.layer(
+        ConfigProvider.fromEnvRecord({
+          LUCKY_DEFAULT_CHANNEL: "   ",
+        })
+      )
+    );
+    expect(res.defaultChannel).toBe("alpha");
+  });
+
+  test("fails with InvalidChannelError without creating outDir when dataDir has an invalid channel filename", async () => {
+    const dataDir = join(tempDir, "data");
+    const outDir = join(tempDir, "dist");
+    const configPath = join(tempDir, "lucky.config.json");
+
+    await runWithBun(
+      writeChannelPosts(join(dataDir, "my-channel.jsonl"), [
+        { id: 1, date: "2024-01-01T00:00:00Z", text: "Hello https://example.com" },
+      ])
+    );
+
+    const err = await runWithBun(
+      Effect.flip(buildSite({ dataDir, outDir, configPath }))
+    );
+    expect(err._tag).toBe("InvalidChannelError");
+    expect(existsSync(outDir)).toBe(false);
   });
 
   test("built index.html inline script executes redirects for post and link modes and falls back when link pool is empty", async () => {
