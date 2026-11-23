@@ -1,124 +1,131 @@
+import { BunHttpClient, BunRuntime, BunServices } from "@effect/platform-bun";
+import { Console, Effect, Layer, Option } from "effect";
+import { Argument, Command, Flag } from "effect/cli";
 import { buildSite, loadLuckyConfig } from "./build";
-import { scrapeChannel } from "./scrape";
-import type { LuckyMode } from "./types";
+import { scrapeChannels } from "./scrape";
+import { NoChannelsConfiguredError } from "./types";
 
-function parseModeFlag(value: string | undefined): LuckyMode | undefined {
-  if (value === "post" || value === "link") {
-    return value;
-  }
-  return undefined;
-}
-
-export async function runCli(argv: string[]): Promise<number> {
-  const command = argv[0];
-  const args = argv.slice(1);
-
-  if (!command || command === "--help" || command === "-h" || command === "help") {
-    console.log(
-      [
-        "Usage:",
-        "  bun run scrape [channels...] [--full] [--data-dir <dir>] [--config <path>] [--delay <ms>]",
-        "  bun run build [--data-dir <dir>] [--out-dir <dir>] [--config <path>] [--default-channel <name>] [--default-mode <post|link>]",
-      ].join("\n")
-    );
-    return 0;
-  }
-
-  if (command === "scrape") {
-    const channels: string[] = [];
-    let full = false;
-    let dataDir = "data";
-    let configPath = "lucky.config.json";
-    let delayMs = 250;
-
-    for (let i = 0; i < args.length; i++) {
-      const arg = args[i];
-      if (!arg) continue;
-
-      if (arg === "--full" || arg === "-f") {
-        full = true;
-      } else if (arg === "--data-dir" && args[i + 1]) {
-        dataDir = args[++i]!;
-      } else if (arg === "--config" && args[i + 1]) {
-        configPath = args[++i]!;
-      } else if (arg === "--delay" && args[i + 1]) {
-        delayMs = Number.parseInt(args[++i]!, 10);
-      } else if (!arg.startsWith("-")) {
-        channels.push(arg);
-      }
-    }
-
-    let targets = channels;
+const scrapeCommand = Command.make(
+  "scrape",
+  {
+    channels: Argument.String("channels").pipe(
+      Argument.withDescription("Public Telegram channel usernames or URLs"),
+      Argument.variadic()
+    ),
+    full: Flag.Boolean("full").pipe(
+      Flag.withAlias("f"),
+      Flag.withDescription("Perform full mirror scrape replacing existing JSONL"),
+      Flag.withDefault(false)
+    ),
+    dataDir: Flag.String("data-dir").pipe(
+      Flag.withDescription("Directory containing channel JSONL files"),
+      Flag.withDefault("data")
+    ),
+    config: Flag.String("config").pipe(
+      Flag.withDescription("Path to lucky.config.json"),
+      Flag.withDefault("lucky.config.json")
+    ),
+    delay: Flag.Int("delay").pipe(
+      Flag.withDescription("Delay in milliseconds between paginated requests"),
+      Flag.withDefault(250)
+    ),
+    concurrency: Flag.Int("concurrency").pipe(
+      Flag.withDescription("Maximum concurrent channels to scrape"),
+      Flag.withDefault(1)
+    ),
+  },
+  Effect.fn("cli.scrape")(function*({
+    channels,
+    full,
+    dataDir,
+    config,
+    delay,
+    concurrency,
+  }) {
+    let targets: ReadonlyArray<string> = channels;
     if (targets.length === 0) {
-      const cfg = await loadLuckyConfig(configPath);
+      const cfg = yield* loadLuckyConfig(config);
       targets = cfg.channels ?? (cfg.defaultChannel ? [cfg.defaultChannel] : []);
     }
 
     if (targets.length === 0) {
-      console.error(
-        "No channels specified. Pass channel names to `bun run scrape <channel>` or configure `channels` in lucky.config.json."
-      );
-      return 1;
+      return yield* new NoChannelsConfiguredError({ configPath: config });
     }
 
-    for (const channel of targets) {
-      const res = await scrapeChannel({
-        channel,
-        dataDir,
-        full,
-        delayMs,
-      });
-      console.log(
+    const results = yield* scrapeChannels(targets, {
+      dataDir,
+      full,
+      delayMs: delay,
+      concurrency,
+    });
+
+    for (const res of results) {
+      yield* Console.log(
         `[scrape] @${res.channel} (${res.mode}): ${res.fetchedPages} page(s), +${res.addedOrUpdatedCount} updated/new, ${res.totalCount} total posts -> ${res.filePath}`
       );
     }
+  })
+).pipe(Command.withDescription("Scrape public Telegram channels into data/*.jsonl"));
 
-    return 0;
-  }
-
-  if (command === "build") {
-    let dataDir = "data";
-    let outDir = "dist";
-    let configPath = "lucky.config.json";
-    let defaultChannel: string | undefined;
-    let defaultMode: LuckyMode | undefined;
-
-    for (let i = 0; i < args.length; i++) {
-      const arg = args[i];
-      if (!arg) continue;
-
-      if (arg === "--data-dir" && args[i + 1]) {
-        dataDir = args[++i]!;
-      } else if (arg === "--out-dir" && args[i + 1]) {
-        outDir = args[++i]!;
-      } else if (arg === "--config" && args[i + 1]) {
-        configPath = args[++i]!;
-      } else if (arg === "--default-channel" && args[i + 1]) {
-        defaultChannel = args[++i]!;
-      } else if (arg === "--default-mode" && args[i + 1]) {
-        defaultMode = parseModeFlag(args[++i]);
-      }
-    }
-
-    const res = await buildSite({
+const buildCommand = Command.make(
+  "build",
+  {
+    dataDir: Flag.String("data-dir").pipe(
+      Flag.withDescription("Directory containing channel JSONL files"),
+      Flag.withDefault("data")
+    ),
+    outDir: Flag.String("out-dir").pipe(
+      Flag.withDescription("Output directory for the built static site"),
+      Flag.withDefault("dist")
+    ),
+    config: Flag.String("config").pipe(
+      Flag.withDescription("Path to lucky.config.json"),
+      Flag.withDefault("lucky.config.json")
+    ),
+    defaultChannel: Flag.String("default-channel").pipe(
+      Flag.withDescription("Default channel for root redirects"),
+      Flag.optional
+    ),
+    defaultMode: Flag.Literals("default-mode", ["post", "link"]).pipe(
+      Flag.withDescription("Default redirect mode (post or link)"),
+      Flag.optional
+    ),
+  },
+  Effect.fn("cli.build")(function*({
+    dataDir,
+    outDir,
+    config,
+    defaultChannel,
+    defaultMode,
+  }) {
+    const res = yield* buildSite({
       dataDir,
       outDir,
-      configPath,
-      defaultChannel,
-      defaultMode,
+      configPath: config,
+      defaultChannel: Option.getOrUndefined(defaultChannel),
+      defaultMode: Option.getOrUndefined(defaultMode),
     });
 
-    console.log(
+    yield* Console.log(
       `[build] Built ${res.channels.length} channel(s) into ${res.outDir} (defaultChannel=${res.defaultChannel ?? "none"}, defaultMode=${res.defaultMode})`
     );
-    return 0;
-  }
+  })
+).pipe(Command.withDescription("Build static redirect site and JSON indexes"));
 
-  console.error(`Unknown subcommand: ${command}`);
-  return 1;
-}
+export const luckyCommand = Command.make("lucky").pipe(
+  Command.withDescription("Telegram public channel I'm Feeling Lucky CLI"),
+  Command.withSubcommands([scrapeCommand, buildCommand])
+);
+
+export const runCli = Command.runWith(luckyCommand, {
+  version: "0.1.0",
+  renderErrors: false,
+});
 
 if (import.meta.main) {
-  const code = await runCli(process.argv.slice(2));
-  process.exit(code);
+  luckyCommand.pipe(
+    Command.run({ version: "0.1.0" }),
+    Effect.provide(Layer.mergeAll(BunServices.layer, BunHttpClient.layer)),
+    BunRuntime.runMain
+  );
 }
