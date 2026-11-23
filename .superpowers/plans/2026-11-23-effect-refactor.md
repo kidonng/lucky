@@ -32,10 +32,12 @@
 ### Task 1: Domain Schemas & Typed Errors (`src/types.ts`)
 
 **Files:**
+
 - Modify: `src/types.ts:1-27`
 - Test: `tests/types.test.ts` (create)
 
 **Interfaces:**
+
 - Produces in `src/types.ts`:
   - Schemas & Types:
     - `export const LuckyMode: Schema.Literals<readonly ["post", "link"]>` and `export type LuckyMode = typeof LuckyMode["Type"]`
@@ -67,12 +69,16 @@ import {
 describe("types & schemas", () => {
   test("ChannelPostJson decodes valid JSON line and rejects non-int id", () => {
     const decode = Schema.decodeUnknownSync(ChannelPostJson);
-    expect(decode('{"id":1,"date":"2024-01-01T00:00:00Z","text":"hi"}')).toEqual({
+    expect(
+      decode('{"id":1,"date":"2024-01-01T00:00:00Z","text":"hi"}'),
+    ).toEqual({
       id: 1,
       date: "2024-01-01T00:00:00Z",
       text: "hi",
     });
-    expect(() => decode('{"id":1.5,"date":"2024-01-01T00:00:00Z","text":"hi"}')).toThrow();
+    expect(() =>
+      decode('{"id":1.5,"date":"2024-01-01T00:00:00Z","text":"hi"}'),
+    ).toThrow();
   });
 
   test("LuckyConfigJson validates defaultMode literals and allows empty object", () => {
@@ -82,7 +88,10 @@ describe("types & schemas", () => {
   });
 
   test("Tagged errors expose _tag discriminant", () => {
-    const err = new InvalidChannelError({ input: "bad", cause: new Error("invalid") });
+    const err = new InvalidChannelError({
+      input: "bad",
+      cause: new Error("invalid"),
+    });
     expect(err._tag).toBe("InvalidChannelError");
   });
 });
@@ -108,6 +117,7 @@ Expected: PASS (3 pass, 0 type errors)
 git add src/types.ts tests/types.test.ts
 git commit -m "types: model domain types and errors with Effect Schema"
 ```
+
 (Use full Linux Kernel commit body per Global Constraints.)
 
 ---
@@ -115,10 +125,12 @@ git commit -m "types: model domain types and errors with Effect Schema"
 ### Task 2: Effectful JSONL Storage (`src/storage.ts`)
 
 **Files:**
+
 - Modify: `src/storage.ts:1-68`
 - Test: `tests/storage.test.ts` (create)
 
 **Interfaces:**
+
 - Consumes: `src/types.ts` (`ChannelPost`, `ChannelPostJson`, `StorageDecodeError`)
 - Produces in `src/storage.ts`:
   - `export function serializePostJsonlLine(post: ChannelPost): string`
@@ -128,10 +140,11 @@ git commit -m "types: model domain types and errors with Effect Schema"
 - [ ] **Step 1: Write failing tests in `tests/storage.test.ts`**
 
 Cover:
+
 1. Reading a non-existent file returns `[]`.
 2. Writing unsorted/duplicate posts creates parent directories, deduplicates by `id`, sorts ascending by `id`, preserves exact key order `id,date,text`, and ignores blank lines on read.
 3. Reading a file containing a malformed JSONL line fails with `StorageDecodeError` carrying `{ path, line: 2 }`.
-Run each effect via `Effect.runPromise(program.pipe(Effect.provide(BunServices.layer)))` using `Effect.exit` / `Cause` or `Effect.flip` for failure assertions.
+   Run each effect via `Effect.runPromise(program.pipe(Effect.provide(BunServices.layer)))` using `Effect.exit` / `Cause` or `Effect.flip` for failure assertions.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -159,10 +172,12 @@ git commit -m "storage: migrate JSONL persistence to Effect FileSystem and Schem
 ### Task 3: Effectful Telegram Scraper (`src/scrape.ts`)
 
 **Files:**
+
 - Modify: `src/scrape.ts:1-182`
 - Modify: `tests/scrape.test.ts:1-150`
 
 **Interfaces:**
+
 - Consumes:
   - `src/parser.ts` (`normalizeChannelName`, `parseChannelPageHtml`)
   - `src/storage.ts` (`readChannelPosts`, `writeChannelPosts`)
@@ -212,10 +227,12 @@ git commit -m "scrape: migrate HTTP fetching and retries to Effect HttpClient an
 ### Task 4: Effectful Site Builder & Config Loader (`src/build.ts`)
 
 **Files:**
+
 - Modify: `src/build.ts:1-146`
 - Modify: `tests/build.test.ts:1-203`
 
 **Interfaces:**
+
 - Consumes:
   - `src/links.ts` (`extractChannelLinks`)
   - `src/parser.ts` (`normalizeChannelName`)
@@ -265,10 +282,12 @@ git commit -m "build: migrate site builder and config loading to Effect FileSyst
 ### Task 5: `effect/cli` Entrypoint & Full Verification (`src/cli.ts`)
 
 **Files:**
+
 - Modify: `src/cli.ts:1-124`
 - Modify: `tests/cli.test.ts:1-55`
 
 **Interfaces:**
+
 - Consumes:
   - `src/build.ts` (`buildSite`, `loadLuckyConfig`)
   - `src/scrape.ts` (`scrapeChannels`)
@@ -300,11 +319,12 @@ Expected: FAIL
 - [ ] **Step 4: Run full test suite, typecheck, and CLI smoke checks**
 
 Run:
+
 1. `mise exec bun -- bun test`
 2. `mise exec bun -- bunx tsc --noEmit`
 3. `mise exec bun -- bun run src/cli.ts --help`
 4. `mise exec bun -- bun run build --out-dir /tmp/lucky-smoke-dist`
-Expected: All tests across all 6 test files pass; `tsc --noEmit` exits 0; `--help` prints generated `effect/cli` help; smoke build succeeds into `/tmp/lucky-smoke-dist` (clean up `/tmp/lucky-smoke-dist` afterward).
+   Expected: All tests across all 6 test files pass; `tsc --noEmit` exits 0; `--help` prints generated `effect/cli` help; smoke build succeeds into `/tmp/lucky-smoke-dist` (clean up `/tmp/lucky-smoke-dist` afterward).
 
 - [ ] **Step 5: Commit**
 

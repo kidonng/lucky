@@ -10,14 +10,16 @@ import { writeChannelPosts } from "../src/storage";
 
 const runWithBun = <A, E>(
   effect: Effect.Effect<A, E, BunServices.BunServices>,
-  extraLayer?: Layer.Layer<never>
+  extraLayer?: Layer.Layer<never>,
 ): Promise<A> =>
   Effect.runPromise(
     effect.pipe(
       Effect.provide(
-        extraLayer ? Layer.mergeAll(BunServices.layer, extraLayer) : BunServices.layer
-      )
-    )
+        extraLayer
+          ? Layer.mergeAll(BunServices.layer, extraLayer)
+          : BunServices.layer,
+      ),
+    ),
   );
 
 describe("buildSite", () => {
@@ -38,9 +40,13 @@ describe("buildSite", () => {
 
     await runWithBun(
       writeChannelPosts(join(dataDir, "alpha.jsonl"), [
-        { id: 10, date: "2024-01-01T00:00:00Z", text: "Hello https://a.example.com" },
+        {
+          id: 10,
+          date: "2024-01-01T00:00:00Z",
+          text: "Hello https://a.example.com",
+        },
         { id: 12, date: "2024-01-02T00:00:00Z", text: "Media only" },
-      ])
+      ]),
     );
 
     const res = await runWithBun(
@@ -49,13 +55,15 @@ describe("buildSite", () => {
         outDir,
         configPath,
         defaultMode: "link",
-      })
+      }),
     );
 
     expect(res.defaultChannel).toBe("alpha");
     expect(res.defaultMode).toBe("link");
 
-    const chanJson = JSON.parse(await readFile(join(outDir, "data", "alpha.json"), "utf8"));
+    const chanJson = JSON.parse(
+      await readFile(join(outDir, "data", "alpha.json"), "utf8"),
+    );
     expect(chanJson).toEqual({
       channel: "alpha",
       postCount: 2,
@@ -64,7 +72,9 @@ describe("buildSite", () => {
       links: ["https://a.example.com/"],
     });
 
-    const channelsList = JSON.parse(await readFile(join(outDir, "data", "channels.json"), "utf8"));
+    const channelsList = JSON.parse(
+      await readFile(join(outDir, "data", "channels.json"), "utf8"),
+    );
     expect(channelsList).toEqual([
       { channel: "alpha", postCount: 2, linkCount: 1 },
     ]);
@@ -82,7 +92,7 @@ describe("buildSite", () => {
     await runWithBun(
       writeChannelPosts(join(dataDir, "MyChan.jsonl"), [
         { id: 1, date: "2024-01-01T00:00:00Z", text: "Post 1" },
-      ])
+      ]),
     );
 
     const res = await runWithBun(
@@ -91,7 +101,7 @@ describe("buildSite", () => {
         outDir,
         configPath,
         defaultChannel: "mychan",
-      })
+      }),
     );
 
     expect(res.defaultChannel).toBe("MyChan");
@@ -105,7 +115,11 @@ describe("buildSite", () => {
     expect(jsonErr._tag).toBe("ConfigParseError");
 
     const badModePath = join(tempDir, "bad-mode.json");
-    await writeFile(badModePath, JSON.stringify({ defaultMode: "bad" }), "utf8");
+    await writeFile(
+      badModePath,
+      JSON.stringify({ defaultMode: "bad" }),
+      "utf8",
+    );
 
     const modeErr = await runWithBun(Effect.flip(loadLuckyConfig(badModePath)));
     expect(modeErr._tag).toBe("ConfigParseError");
@@ -119,12 +133,12 @@ describe("buildSite", () => {
     await runWithBun(
       writeChannelPosts(join(dataDir, "alpha.jsonl"), [
         { id: 1, date: "2024-01-01T00:00:00Z", text: "Post 1" },
-      ])
+      ]),
     );
     await runWithBun(
       writeChannelPosts(join(dataDir, "beta.jsonl"), [
         { id: 2, date: "2024-01-02T00:00:00Z", text: "Post 2" },
-      ])
+      ]),
     );
 
     const envRes = await runWithBun(
@@ -133,8 +147,8 @@ describe("buildSite", () => {
         ConfigProvider.fromEnvRecord({
           LUCKY_DEFAULT_CHANNEL: "beta",
           LUCKY_DEFAULT_MODE: "link",
-        })
-      )
+        }),
+      ),
     );
     expect(envRes.defaultChannel).toBe("beta");
     expect(envRes.defaultMode).toBe("link");
@@ -144,8 +158,8 @@ describe("buildSite", () => {
       ConfigProvider.layer(
         ConfigProvider.fromEnvRecord({
           LUCKY_DEFAULT_MODE: "invalid",
-        })
-      )
+        }),
+      ),
     );
     expect(invalidEnvErr._tag).toBe("ConfigError");
   });
@@ -162,8 +176,8 @@ describe("buildSite", () => {
           outDir,
           configPath,
           defaultChannel: "https://example.com/bad",
-        })
-      )
+        }),
+      ),
     );
     expect(err._tag).toBe("InvalidChannelError");
     expect(existsSync(outDir)).toBe(false);
@@ -175,8 +189,8 @@ describe("buildSite", () => {
           outDir,
           configPath,
           defaultChannel: "   ",
-        })
-      )
+        }),
+      ),
     );
     expect(blankErr._tag).toBe("InvalidChannelError");
     expect(existsSync(outDir)).toBe(false);
@@ -187,21 +201,27 @@ describe("buildSite", () => {
     const outDir = join(tempDir, "dist");
     const configPath = join(tempDir, "lucky.config.json");
 
-    await writeFile(configPath, JSON.stringify({ defaultChannel: "alpha" }), "utf8");
+    await writeFile(
+      configPath,
+      JSON.stringify({ defaultChannel: "alpha" }),
+      "utf8",
+    );
     await runWithBun(
       writeChannelPosts(join(dataDir, "alpha.jsonl"), [
         { id: 1, date: "2024-01-01T00:00:00Z", text: "Post 1" },
-      ])
+      ]),
     );
 
     const invalidModeOutDir = join(tempDir, "dist-invalid-mode");
     const invalidEnvErr = await runWithBun(
-      Effect.flip(buildSite({ dataDir, outDir: invalidModeOutDir, configPath })),
+      Effect.flip(
+        buildSite({ dataDir, outDir: invalidModeOutDir, configPath }),
+      ),
       ConfigProvider.layer(
         ConfigProvider.fromEnvRecord({
           LUCKY_DEFAULT_MODE: "invalid",
-        })
-      )
+        }),
+      ),
     );
     expect(invalidEnvErr._tag).toBe("ConfigError");
     expect(existsSync(invalidModeOutDir)).toBe(false);
@@ -211,8 +231,8 @@ describe("buildSite", () => {
       ConfigProvider.layer(
         ConfigProvider.fromEnvRecord({
           LUCKY_DEFAULT_CHANNEL: "   ",
-        })
-      )
+        }),
+      ),
     );
     expect(res.defaultChannel).toBe("alpha");
   });
@@ -224,12 +244,16 @@ describe("buildSite", () => {
 
     await runWithBun(
       writeChannelPosts(join(dataDir, "my-channel.jsonl"), [
-        { id: 1, date: "2024-01-01T00:00:00Z", text: "Hello https://example.com" },
-      ])
+        {
+          id: 1,
+          date: "2024-01-01T00:00:00Z",
+          text: "Hello https://example.com",
+        },
+      ]),
     );
 
     const err = await runWithBun(
-      Effect.flip(buildSite({ dataDir, outDir, configPath }))
+      Effect.flip(buildSite({ dataDir, outDir, configPath })),
     );
     expect(err._tag).toBe("InvalidChannelError");
     expect(existsSync(outDir)).toBe(false);
@@ -242,13 +266,17 @@ describe("buildSite", () => {
 
     await runWithBun(
       writeChannelPosts(join(dataDir, "alpha.jsonl"), [
-        { id: 10, date: "2024-01-01T00:00:00Z", text: "Hello https://a.example.com/target" },
-      ])
+        {
+          id: 10,
+          date: "2024-01-01T00:00:00Z",
+          text: "Hello https://a.example.com/target",
+        },
+      ]),
     );
     await runWithBun(
       writeChannelPosts(join(dataDir, "nolinks.jsonl"), [
         { id: 20, date: "2024-01-02T00:00:00Z", text: "Just plain text" },
-      ])
+      ]),
     );
 
     await runWithBun(
@@ -258,7 +286,7 @@ describe("buildSite", () => {
         configPath,
         defaultChannel: "alpha",
         defaultMode: "post",
-      })
+      }),
     );
 
     const html = await readFile(join(outDir, "index.html"), "utf8");
@@ -340,7 +368,8 @@ describe("buildSite", () => {
         querySelector(sel: string) {
           if (sel.includes('value="post"')) return radios.post;
           if (sel.includes('value="link"')) return radios.link;
-          if (sel.includes(":checked")) return radios.link.checked ? radios.link : radios.post;
+          if (sel.includes(":checked"))
+            return radios.link.checked ? radios.link : radios.post;
           return null;
         },
       };
@@ -356,7 +385,10 @@ describe("buildSite", () => {
         }
       };
 
-      const awaitableScript = scriptBody.replace("(async function () {", "return (async function () {");
+      const awaitableScript = scriptBody.replace(
+        "(async function () {",
+        "return (async function () {",
+      );
       const fn = new Function("window", "document", "fetch", awaitableScript);
       await fn(fakeWindow, fakeDocument, fakeFetch);
       return { replacedUrl: replacedUrl as string | null, elements, radios };
@@ -371,6 +403,8 @@ describe("buildSite", () => {
     const emptyLinkRun = await runFrontendScript("?c=nolinks&m=link");
     expect(emptyLinkRun.replacedUrl).toBeNull();
     expect(emptyLinkRun.elements["ui-view"]?.style.display).toBe("block");
-    expect(emptyLinkRun.elements["notice-box"]?.textContent).toContain("没有提取到外部链接");
+    expect(emptyLinkRun.elements["notice-box"]?.textContent).toContain(
+      "没有提取到外部链接",
+    );
   });
 });

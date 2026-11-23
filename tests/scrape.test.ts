@@ -10,7 +10,7 @@ import { readChannelPosts, writeChannelPosts } from "../src/storage";
 
 function makePageHtml(
   channel: string,
-  items: Array<{ id: number; date: string; html: string }>
+  items: Array<{ id: number; date: string; html: string }>,
 ): string {
   return items
     .map(
@@ -22,13 +22,13 @@ function makePageHtml(
             <time datetime="${item.date}">Date</time>
           </a>
         </div>
-      </div>`
+      </div>`,
     )
     .join("\n");
 }
 
 function makeMockHttpClientLayer(
-  handler: (url: string) => { status?: number; body: string }
+  handler: (url: string) => { status?: number; body: string },
 ): Layer.Layer<HttpClient.HttpClient> {
   return Layer.succeed(
     HttpClient.HttpClient,
@@ -37,19 +37,19 @@ function makeMockHttpClientLayer(
       return Effect.succeed(
         HttpClientResponse.fromWeb(
           request,
-          new Response(res.body, { status: res.status ?? 200 })
-        )
+          new Response(res.body, { status: res.status ?? 200 }),
+        ),
       );
-    })
+    }),
   );
 }
 
 const runScrape = <A, E>(
   effect: Effect.Effect<A, E, BunServices.BunServices | HttpClient.HttpClient>,
-  httpLayer: Layer.Layer<HttpClient.HttpClient>
+  httpLayer: Layer.Layer<HttpClient.HttpClient>,
 ): Promise<A> =>
   Effect.runPromise(
-    effect.pipe(Effect.provide(Layer.mergeAll(BunServices.layer, httpLayer)))
+    effect.pipe(Effect.provide(Layer.mergeAll(BunServices.layer, httpLayer))),
   );
 
 describe("scrapeChannel", () => {
@@ -82,7 +82,7 @@ describe("scrapeChannel", () => {
         dataDir: tempDir,
         delayMs: 0,
       }),
-      makeMockHttpClientLayer((url) => ({ body: pages[url] ?? "" }))
+      makeMockHttpClientLayer((url) => ({ body: pages[url] ?? "" })),
     );
 
     expect(res.mode).toBe("full");
@@ -91,10 +91,12 @@ describe("scrapeChannel", () => {
     const raw = await readFile(res.filePath, "utf8");
     const lines = raw.trim().split("\n");
     expect(lines).toHaveLength(4);
-    expect(lines[0]).toBe('{"id":1,"date":"2024-01-01T00:00:00+00:00","text":"Post 1"}');
+    expect(lines[0]).toBe(
+      '{"id":1,"date":"2024-01-01T00:00:00+00:00","text":"Post 1"}',
+    );
 
     const posts = await Effect.runPromise(
-      readChannelPosts(res.filePath).pipe(Effect.provide(BunServices.layer))
+      readChannelPosts(res.filePath).pipe(Effect.provide(BunServices.layer)),
     );
     expect(posts.map((p) => p.id)).toEqual([1, 2, 3, 4]);
   });
@@ -105,7 +107,7 @@ describe("scrapeChannel", () => {
       writeChannelPosts(filePath, [
         { id: 1, date: "2024-01-01T00:00:00+00:00", text: "Post 1" },
         { id: 2, date: "2024-01-02T00:00:00+00:00", text: "Post 2" },
-      ]).pipe(Effect.provide(BunServices.layer))
+      ]).pipe(Effect.provide(BunServices.layer)),
     );
 
     const pages: Record<string, string> = {
@@ -122,7 +124,7 @@ describe("scrapeChannel", () => {
         dataDir: tempDir,
         delayMs: 0,
       }),
-      makeMockHttpClientLayer((url) => ({ body: pages[url] ?? "" }))
+      makeMockHttpClientLayer((url) => ({ body: pages[url] ?? "" })),
     );
 
     expect(res.mode).toBe("incremental");
@@ -130,7 +132,7 @@ describe("scrapeChannel", () => {
     expect(res.totalCount).toBe(4);
 
     const posts = await Effect.runPromise(
-      readChannelPosts(filePath).pipe(Effect.provide(BunServices.layer))
+      readChannelPosts(filePath).pipe(Effect.provide(BunServices.layer)),
     );
     expect(posts.map((p) => p.id)).toEqual([1, 2, 3, 4]);
   });
@@ -141,7 +143,7 @@ describe("scrapeChannel", () => {
       writeChannelPosts(filePath, [
         { id: 1, date: "2024-01-01T00:00:00+00:00", text: "Old Post 1" },
         { id: 2, date: "2024-01-02T00:00:00+00:00", text: "Deleted Post 2" },
-      ]).pipe(Effect.provide(BunServices.layer))
+      ]).pipe(Effect.provide(BunServices.layer)),
     );
 
     const pages: Record<string, string> = {
@@ -159,12 +161,12 @@ describe("scrapeChannel", () => {
         full: true,
         delayMs: 0,
       }),
-      makeMockHttpClientLayer((url) => ({ body: pages[url] ?? "" }))
+      makeMockHttpClientLayer((url) => ({ body: pages[url] ?? "" })),
     );
 
     expect(res.mode).toBe("full");
     const posts = await Effect.runPromise(
-      readChannelPosts(filePath).pipe(Effect.provide(BunServices.layer))
+      readChannelPosts(filePath).pipe(Effect.provide(BunServices.layer)),
     );
     expect(posts).toEqual([
       { id: 1, date: "2024-01-01T00:00:00+00:00", text: "Edited Post 1" },
@@ -177,7 +179,7 @@ describe("scrapeChannel", () => {
     await Effect.runPromise(
       writeChannelPosts(filePath, [
         { id: 1, date: "2024-01-01T00:00:00+00:00", text: "Existing Post" },
-      ]).pipe(Effect.provide(BunServices.layer))
+      ]).pipe(Effect.provide(BunServices.layer)),
     );
 
     const err = await runScrape(
@@ -187,17 +189,17 @@ describe("scrapeChannel", () => {
           dataDir: tempDir,
           full: true,
           delayMs: 0,
-        })
+        }),
       ),
       makeMockHttpClientLayer(() => ({
         body: "<html><body>Rate limited or invalid</body></html>",
-      }))
+      })),
     );
 
     expect(err._tag).toBe("EmptyFullScrapeError");
 
     const posts = await Effect.runPromise(
-      readChannelPosts(filePath).pipe(Effect.provide(BunServices.layer))
+      readChannelPosts(filePath).pipe(Effect.provide(BunServices.layer)),
     );
     expect(posts).toHaveLength(1);
   });
@@ -223,7 +225,7 @@ describe("scrapeChannel", () => {
           };
         }
         return { body: "" };
-      })
+      }),
     );
     expect(rateLimitAttempts).toBe(2);
     expect(okRes.totalCount).toBe(1);
@@ -235,12 +237,12 @@ describe("scrapeChannel", () => {
           channel: "otherchan",
           dataDir: tempDir,
           delayMs: 0,
-        })
+        }),
       ),
       makeMockHttpClientLayer(() => {
         serverErrorAttempts++;
         return { status: 500, body: "Internal Server Error" };
-      })
+      }),
     );
     expect(serverErrorAttempts).toBe(3);
     expect(err._tag).toBe("ScrapeHttpError");
@@ -254,12 +256,12 @@ describe("scrapeChannel", () => {
           channel: "missingchan",
           dataDir: tempDir,
           delayMs: 0,
-        })
+        }),
       ),
       makeMockHttpClientLayer(() => {
         attempts++;
         return { status: 404, body: "Not Found" };
-      })
+      }),
     );
 
     expect(attempts).toBe(1);
@@ -277,9 +279,9 @@ describe("scrapeChannel", () => {
           channel: "https://example.com/not-telegram",
           dataDir: tempDir,
           delayMs: 0,
-        })
+        }),
       ),
-      makeMockHttpClientLayer(() => ({ body: "" }))
+      makeMockHttpClientLayer(() => ({ body: "" })),
     );
     expect(err._tag).toBe("InvalidChannelError");
 
@@ -304,7 +306,7 @@ describe("scrapeChannel", () => {
           };
         }
         return { body: "" };
-      })
+      }),
     );
     expect(results.map((r) => r.channel)).toEqual(["chan_a", "chan_b"]);
   });

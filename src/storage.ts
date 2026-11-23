@@ -1,9 +1,5 @@
 import { Effect, FileSystem, Path, Schema } from "effect";
-import {
-  type ChannelPost,
-  ChannelPostJson,
-  StorageDecodeError,
-} from "./types";
+import { type ChannelPost, ChannelPostJson, StorageDecodeError } from "./types";
 
 const decodePostJson = Schema.decodeUnknownEffect(ChannelPostJson);
 
@@ -16,7 +12,7 @@ export function serializePostJsonlLine(post: ChannelPost): string {
 }
 
 export const readChannelPosts = Effect.fn("storage.readChannelPosts")(
-  function*(jsonlPath: string) {
+  function* (jsonlPath: string) {
     const fs = yield* FileSystem.FileSystem;
     if (!(yield* fs.exists(jsonlPath))) {
       return [];
@@ -39,19 +35,19 @@ export const readChannelPosts = Effect.fn("storage.readChannelPosts")(
               path: jsonlPath,
               line: index + 1,
               cause,
-            })
-        )
+            }),
+        ),
       );
 
       byId.set(post.id, post);
     }
 
     return Array.from(byId.values()).sort((a, b) => a.id - b.id);
-  }
+  },
 );
 
 export const writeChannelPosts = Effect.fn("storage.writeChannelPosts")(
-  function*(jsonlPath: string, posts: ReadonlyArray<ChannelPost>) {
+  function* (jsonlPath: string, posts: ReadonlyArray<ChannelPost>) {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
 
@@ -73,5 +69,5 @@ export const writeChannelPosts = Effect.fn("storage.writeChannelPosts")(
         : "";
 
     yield* fs.writeFileString(jsonlPath, body);
-  }
+  },
 );

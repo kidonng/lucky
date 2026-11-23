@@ -24,7 +24,7 @@
 1. **Telegram pagination overlap / boundary posts**: `t.me/s/<channel>?before=<id>` or `?after=<id>` can return empty pages, service messages without `<time datetime>`, or duplicate boundary messages; scraper must terminate cleanly without infinite loops and deduplicate by `id`.
 2. **HTML formatting & special anchors in Telegram posts**: `<br>` tags inside `.tgme_widget_message_text`, hashtag search links (`?q=%23tag`), protocol-relative links (`//example.com`), and URLs containing parentheses (`https://en.wikipedia.org/wiki/Rust_(programming_language)`) must survive HTML → Markdown → mdast URL extraction without truncation or corruption.
 3. **Truncated visible URL text in Telegram anchors**: Telegram shortens long plain URLs in anchor text (`<a href="https://example.com/very/long/path">https://example.com/very/lo…</a>`); conversion and extraction must preserve the full `href` target rather than the truncated label.
-4. **Channel self-link filtering**: Links pointing to the channel itself (`https://t.me/<channel>`, `https://t.me/<channel>/123`, `https://t.me/s/<channel>?before=10`, case-insensitive, including `telegram.me`) must be excluded from `links`, while links to *other* Telegram channels (`https://t.me/other_channel/45`) and external sites are kept.
+4. **Channel self-link filtering**: Links pointing to the channel itself (`https://t.me/<channel>`, `https://t.me/<channel>/123`, `https://t.me/s/<channel>?before=10`, case-insensitive, including `telegram.me`) must be excluded from `links`, while links to _other_ Telegram channels (`https://t.me/other_channel/45`) and external sites are kept.
 5. **Empty link pool or missing default channel on frontend**: When `mode=link` is requested on a channel with 0 extracted links, or when no channel is specified and multiple channels exist, the frontend must not crash or loop-redirect; it must render an actionable fallback state.
 
 ---
@@ -32,6 +32,7 @@
 ### Task 1: Project Scaffolding & HTML-to-Markdown Post Parser
 
 **Files:**
+
 - Create: `mise.toml`
 - Create: `package.json`
 - Create: `tsconfig.json`
@@ -41,6 +42,7 @@
 - Test: `tests/parser.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `src/types.ts`:
     - `export type LuckyMode = "post" | "link";`
@@ -70,8 +72,12 @@ import {
 describe("normalizeChannelName", () => {
   test("strips @ and t.me URLs", () => {
     expect(normalizeChannelName("@my_channel")).toBe("my_channel");
-    expect(normalizeChannelName("https://t.me/s/my_channel?before=10")).toBe("my_channel");
-    expect(normalizeChannelName("https://t.me/my_channel/42")).toBe("my_channel");
+    expect(normalizeChannelName("https://t.me/s/my_channel?before=10")).toBe(
+      "my_channel",
+    );
+    expect(normalizeChannelName("https://t.me/my_channel/42")).toBe(
+      "my_channel",
+    );
   });
 });
 
@@ -87,7 +93,9 @@ describe("messageHtmlToMarkdown", () => {
 
     const md = messageHtmlToMarkdown(html);
     expect(md).toContain("**Hello** *world*!");
-    expect(md).toContain("https://en.wikipedia.org/wiki/Rust_(programming_language)");
+    expect(md).toContain(
+      "https://en.wikipedia.org/wiki/Rust_(programming_language)",
+    );
     expect(md).toContain("https://example.com/very/long/path/to/article");
     expect(md).not.toContain("https://example.com/very/long/…");
     expect(md).toContain("[PDF](https://cdn.example.com/file.pdf)");
@@ -155,6 +163,7 @@ Expected: FAIL with module not found `../src/parser`.
 - [ ] **Step 4: Implement `src/types.ts` and `src/parser.ts`**
 
 In `src/parser.ts`:
+
 - `normalizeChannelName(input)` extracts the channel handle from `@handle`, `https://t.me/s/handle...`, `https://t.me/handle...`, or plain `handle`.
 - `messageHtmlToMarkdown(htmlFragment)` parses with `unified().use(rehypeParse, { fragment: true })`, transforms the hast AST before `rehypeRemark`:
   - Unwraps `<a href="?q=%23...">` or empty/javascript hrefs into plain text children.
@@ -177,11 +186,13 @@ Commit via eval `commit` namespace with Linux Kernel style message (`parser: Add
 ### Task 2: JSONL Storage & Incremental / Full Mirror Scraper
 
 **Files:**
+
 - Create: `src/storage.ts`
 - Create: `src/scrape.ts`
 - Test: `tests/scrape.test.ts`
 
 **Interfaces:**
+
 - Consumes:
   - `ChannelPost` from `src/types.ts`
   - `normalizeChannelName`, `parseChannelPageHtml` from `src/parser.ts`
@@ -205,7 +216,10 @@ import { join } from "node:path";
 import { scrapeChannel } from "../src/scrape";
 import { readChannelPosts, writeChannelPosts } from "../src/storage";
 
-function makePageHtml(channel: string, items: Array<{ id: number; date: string; html: string }>): string {
+function makePageHtml(
+  channel: string,
+  items: Array<{ id: number; date: string; html: string }>,
+): string {
   return items
     .map(
       (item) => `
@@ -216,7 +230,7 @@ function makePageHtml(channel: string, items: Array<{ id: number; date: string; 
             <time datetime="${item.date}">Date</time>
           </a>
         </div>
-      </div>`
+      </div>`,
     )
     .join("\n");
 }
@@ -258,7 +272,9 @@ describe("scrapeChannel", () => {
     const raw = await readFile(res.filePath, "utf8");
     const lines = raw.trim().split("\n");
     expect(lines).toHaveLength(4);
-    expect(lines[0]).toBe('{"id":1,"date":"2024-01-01T00:00:00+00:00","text":"Post 1"}');
+    expect(lines[0]).toBe(
+      '{"id":1,"date":"2024-01-01T00:00:00+00:00","text":"Post 1"}',
+    );
 
     const posts = await readChannelPosts(res.filePath);
     expect(posts.map((p) => p.id)).toEqual([1, 2, 3, 4]);
@@ -335,11 +351,13 @@ Expected: FAIL with module not found `../src/scrape`.
 - [ ] **Step 3: Implement `src/storage.ts` and `src/scrape.ts`**
 
 In `src/storage.ts`:
+
 - `serializePostJsonlLine(post)` outputs `JSON.stringify({ id: post.id, date: post.date, text: post.text })`.
 - `readChannelPosts(jsonlPath)` returns `[]` if file does not exist, otherwise parses non-empty lines, deduplicates by `id` (last wins), and sorts ascending by `id`.
 - `writeChannelPosts(jsonlPath, posts)` ensures parent directory exists, deduplicates by `id`, sorts ascending by `id`, and writes lines joined by `\n` with a trailing `\n`.
 
 In `src/scrape.ts`:
+
 - Default `fetcher` performs `fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; LuckyBot/1.0)" } })` with up to 3 retries on network / 429 / 5xx errors.
 - Determines mode: if `options.full` is true or existing posts in `<dataDir>/<channel>.jsonl` is empty, runs `"full"` mode; otherwise runs `"incremental"` mode.
 - In `"full"` mode: starts at `https://t.me/s/${channel}`, collects posts, tracks `minId`, loops `https://t.me/s/${channel}?before=${minId}` while `minId > 1` and new posts with `id < minId` are returned. Overwrites `<dataDir>/<channel>.jsonl` with collected posts.
@@ -359,6 +377,7 @@ Commit via eval `commit` namespace with Linux Kernel style message (`scrape: Add
 ### Task 3: Build-Time `unified` Link Extractor & Static Site Builder
 
 **Files:**
+
 - Create: `src/links.ts`
 - Create: `src/web.ts`
 - Create: `src/build.ts`
@@ -366,6 +385,7 @@ Commit via eval `commit` namespace with Linux Kernel style message (`scrape: Add
 - Test: `tests/build.test.ts`
 
 **Interfaces:**
+
 - Consumes:
   - `ChannelPost`, `ChannelIndex`, `ChannelSummary`, `LuckyConfig`, `LuckyMode` from `src/types.ts`
   - `readChannelPosts` from `src/storage.ts`
@@ -383,7 +403,8 @@ Commit via eval `commit` namespace with Linux Kernel style message (`scrape: Add
 - [ ] **Step 1: Write the failing tests in `tests/links.test.ts` and `tests/build.test.ts`**
 
 In `tests/links.test.ts`:
-```typescript
+
+````typescript
 import { describe, expect, test } from "bun:test";
 import { extractChannelLinks, extractLinksFromMarkdown } from "../src/links";
 
@@ -408,8 +429,16 @@ describe("extractLinksFromMarkdown", () => {
 describe("extractChannelLinks", () => {
   test("deduplicates normalized URLs across posts preserving first-seen order", () => {
     const posts = [
-      { id: 1, date: "2024-01-01T00:00:00Z", text: "https://example.com and https://foo.bar/a" },
-      { id: 2, date: "2024-01-02T00:00:00Z", text: "[Ex](https://example.com/) and https://baz.qux" },
+      {
+        id: 1,
+        date: "2024-01-01T00:00:00Z",
+        text: "https://example.com and https://foo.bar/a",
+      },
+      {
+        id: 2,
+        date: "2024-01-02T00:00:00Z",
+        text: "[Ex](https://example.com/) and https://baz.qux",
+      },
     ];
     expect(extractChannelLinks(posts, "demo")).toEqual([
       "https://example.com/",
@@ -418,9 +447,10 @@ describe("extractChannelLinks", () => {
     ]);
   });
 });
-```
+````
 
 In `tests/build.test.ts`:
+
 ```typescript
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
@@ -445,7 +475,11 @@ describe("buildSite", () => {
     const outDir = join(tempDir, "dist");
 
     await writeChannelPosts(join(dataDir, "alpha.jsonl"), [
-      { id: 10, date: "2024-01-01T00:00:00Z", text: "Hello https://a.example.com" },
+      {
+        id: 10,
+        date: "2024-01-01T00:00:00Z",
+        text: "Hello https://a.example.com",
+      },
       { id: 12, date: "2024-01-02T00:00:00Z", text: "Media only" },
     ]);
 
@@ -458,7 +492,9 @@ describe("buildSite", () => {
     expect(res.defaultChannel).toBe("alpha");
     expect(res.defaultMode).toBe("link");
 
-    const chanJson = JSON.parse(await readFile(join(outDir, "data", "alpha.json"), "utf8"));
+    const chanJson = JSON.parse(
+      await readFile(join(outDir, "data", "alpha.json"), "utf8"),
+    );
     expect(chanJson).toEqual({
       channel: "alpha",
       postCount: 2,
@@ -467,7 +503,9 @@ describe("buildSite", () => {
       links: ["https://a.example.com/"],
     });
 
-    const channelsList = JSON.parse(await readFile(join(outDir, "data", "channels.json"), "utf8"));
+    const channelsList = JSON.parse(
+      await readFile(join(outDir, "data", "channels.json"), "utf8"),
+    );
     expect(channelsList).toEqual([
       { channel: "alpha", postCount: 2, linkCount: 1 },
     ]);
@@ -487,6 +525,7 @@ Expected: FAIL with module not found `../src/links` and `../src/build`.
 - [ ] **Step 3: Implement `src/links.ts`, `src/web.ts`, and `src/build.ts`**
 
 In `src/links.ts`:
+
 - Parse `markdown` with `unified().use(remarkParse).use(remarkGfm)`.
 - Visit `link` and `definition` nodes via `unist-util-visit` to collect `node.url`.
 - Validate with `new URL(rawUrl)`; allow only `http:` and `https:`.
@@ -494,6 +533,7 @@ In `src/links.ts`:
 - Deduplicate using `url.toString()`.
 
 In `src/web.ts`:
+
 - `renderIndexHtml` produces a standalone HTML5 page embedding `window.__LUCKY_CONFIG__ = { defaultChannel, defaultMode, channels }`.
 - Frontend script logic:
   - Parses `URLSearchParams(window.location.search)`:
@@ -504,6 +544,7 @@ In `src/web.ts`:
   - Interactive UI mode renders channel selector, mode radio toggle (`随机帖子 (Post)` / `帖中链接 (Link)`), "🎲 手气不错" jump button, and copyable share links (`?c=<channel>&m=post` and `?c=<channel>&m=link`).
 
 In `src/build.ts`:
+
 - Reads optional `lucky.config.json` (if present) and merges with environment variables (`LUCKY_DEFAULT_CHANNEL`, `LUCKY_DEFAULT_MODE`) and explicit `BuildOptions`.
 - Scans `<dataDir>/*.jsonl`, reads posts, extracts links via `extractChannelLinks`, writes `<outDir>/data/<channel>.json`, `<outDir>/data/channels.json`, and `<outDir>/index.html`.
 
@@ -521,6 +562,7 @@ Commit via eval `commit` namespace with Linux Kernel style message (`build: Add 
 ### Task 4: CLI Entrypoint, Configuration, GitHub Actions Workflow & End-to-End Verification
 
 **Files:**
+
 - Create: `src/cli.ts`
 - Create: `lucky.config.json`
 - Create: `.github/workflows/lucky.yml`
@@ -528,6 +570,7 @@ Commit via eval `commit` namespace with Linux Kernel style message (`build: Add 
 - Test: `tests/cli.test.ts`
 
 **Interfaces:**
+
 - Consumes:
   - `scrapeChannel` from `src/scrape.ts`
   - `buildSite` from `src/build.ts`
@@ -561,7 +604,11 @@ describe("runCli", () => {
     const dataDir = join(tempDir, "data");
     const outDir = join(tempDir, "dist");
     await writeChannelPosts(join(dataDir, "mychan.jsonl"), [
-      { id: 1, date: "2024-01-01T00:00:00Z", text: "Visit https://example.com" },
+      {
+        id: 1,
+        date: "2024-01-01T00:00:00Z",
+        text: "Visit https://example.com",
+      },
     ]);
 
     const code = await runCli([
@@ -592,6 +639,7 @@ Expected: FAIL with module not found `../src/cli`.
 - [ ] **Step 3: Implement `src/cli.ts`, `lucky.config.json`, `.github/workflows/lucky.yml`, and `README.md`**
 
 In `src/cli.ts`:
+
 - Supports subcommands:
   - `scrape [channels...] [--full] [--data-dir <dir>] [--config <path>] [--delay <ms>]`: scrapes specified channels (or `channels` array from `lucky.config.json` if none passed on CLI).
   - `build [--data-dir <dir>] [--out-dir <dir>] [--config <path>] [--default-channel <name>] [--default-mode <post|link>]`: runs `buildSite`.

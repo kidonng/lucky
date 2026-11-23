@@ -33,8 +33,16 @@ describe("extractLinksFromMarkdown", () => {
 describe("extractChannelLinks", () => {
   test("deduplicates normalized URLs across posts preserving first-seen order", () => {
     const posts = [
-      { id: 1, date: "2024-01-01T00:00:00Z", text: "https://example.com and https://foo.bar/a" },
-      { id: 2, date: "2024-01-02T00:00:00Z", text: "[Ex](https://example.com/) and https://baz.qux" },
+      {
+        id: 1,
+        date: "2024-01-01T00:00:00Z",
+        text: "https://example.com and https://foo.bar/a",
+      },
+      {
+        id: 2,
+        date: "2024-01-02T00:00:00Z",
+        text: "[Ex](https://example.com/) and https://baz.qux",
+      },
     ];
     expect(extractChannelLinks(posts, "demo")).toEqual([
       "https://example.com/",

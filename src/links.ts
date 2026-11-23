@@ -39,7 +39,7 @@ function isSelfChannelUrl(url: URL, normalizedChannelLower: string): boolean {
 
 function normalizeAndFilterUrl(
   rawUrl: string,
-  normalizedChannelLower: string
+  normalizedChannelLower: string,
 ): string | null {
   const trimmed = rawUrl.trim();
   if (!trimmed) {
@@ -66,7 +66,7 @@ function normalizeAndFilterUrl(
 
 export function extractLinksFromMarkdown(
   markdown: string,
-  channel: string
+  channel: string,
 ): string[] {
   if (!markdown.trim()) {
     return [];
@@ -82,7 +82,8 @@ export function extractLinksFromMarkdown(
       return;
     }
 
-    const rawUrl = "url" in node && typeof node.url === "string" ? node.url : "";
+    const rawUrl =
+      "url" in node && typeof node.url === "string" ? node.url : "";
     const normalized = normalizeAndFilterUrl(rawUrl, normalizedChannelLower);
     if (normalized && !seen.has(normalized)) {
       seen.add(normalized);
@@ -95,7 +96,7 @@ export function extractLinksFromMarkdown(
 
 export function extractChannelLinks(
   posts: ChannelPost[],
-  channel: string
+  channel: string,
 ): string[] {
   const seen = new Set<string>();
   const result: string[] = [];

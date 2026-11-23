@@ -10,7 +10,7 @@ import { runCli } from "../src/cli";
 import { writeChannelPosts } from "../src/storage";
 
 function makeMockHttpClientLayer(
-  handler: (url: string) => { status?: number; body: string }
+  handler: (url: string) => { status?: number; body: string },
 ): Layer.Layer<HttpClient.HttpClient> {
   return Layer.succeed(
     HttpClient.HttpClient,
@@ -19,21 +19,23 @@ function makeMockHttpClientLayer(
       return Effect.succeed(
         HttpClientResponse.fromWeb(
           request,
-          new Response(res.body, { status: res.status ?? 200 })
-        )
+          new Response(res.body, { status: res.status ?? 200 }),
+        ),
       );
-    })
+    }),
   );
 }
 
 const runCliWithEnv = <A, E>(
   effect: Effect.Effect<A, E, BunServices.BunServices | HttpClient.HttpClient>,
-  httpLayer: Layer.Layer<HttpClient.HttpClient> = makeMockHttpClientLayer(() => ({
-    body: "",
-  }))
+  httpLayer: Layer.Layer<HttpClient.HttpClient> = makeMockHttpClientLayer(
+    () => ({
+      body: "",
+    }),
+  ),
 ): Promise<A> =>
   Effect.runPromise(
-    effect.pipe(Effect.provide(Layer.mergeAll(BunServices.layer, httpLayer)))
+    effect.pipe(Effect.provide(Layer.mergeAll(BunServices.layer, httpLayer))),
   );
 
 describe("runCli", () => {
@@ -54,8 +56,12 @@ describe("runCli", () => {
 
     await Effect.runPromise(
       writeChannelPosts(join(dataDir, "mychan.jsonl"), [
-        { id: 1, date: "2024-01-01T00:00:00Z", text: "Visit https://example.com" },
-      ]).pipe(Effect.provide(BunServices.layer))
+        {
+          id: 1,
+          date: "2024-01-01T00:00:00Z",
+          text: "Visit https://example.com",
+        },
+      ]).pipe(Effect.provide(BunServices.layer)),
     );
 
     await runCliWithEnv(
@@ -71,7 +77,7 @@ describe("runCli", () => {
         "mychan",
         "--default-mode",
         "link",
-      ])
+      ]),
     );
 
     const html = await readFile(join(outDir, "index.html"), "utf8");
@@ -84,23 +90,23 @@ describe("runCli", () => {
     await writeFile(
       configPath,
       JSON.stringify({ channels: [], defaultMode: "post" }),
-      "utf8"
+      "utf8",
     );
 
     const err = await runCliWithEnv(
-      Effect.flip(runCli(["scrape", "--config", configPath]))
+      Effect.flip(runCli(["scrape", "--config", configPath])),
     );
     expect(err._tag).toBe("NoChannelsConfiguredError");
   });
 
   test("rejects invalid --delay and --default-mode flags with CliError", async () => {
     const delayErr = await runCliWithEnv(
-      Effect.flip(runCli(["scrape", "mychan", "--delay", "abc"]))
+      Effect.flip(runCli(["scrape", "mychan", "--delay", "abc"])),
     );
     expect(CliError.isCliError(delayErr)).toBe(true);
 
     const modeErr = await runCliWithEnv(
-      Effect.flip(runCli(["build", "--default-mode", "bad"]))
+      Effect.flip(runCli(["build", "--default-mode", "bad"])),
     );
     expect(CliError.isCliError(modeErr)).toBe(true);
   });
@@ -135,12 +141,12 @@ describe("runCli", () => {
           };
         }
         return { body: "" };
-      })
+      }),
     );
 
     const raw = await readFile(join(dataDir, "testchan.jsonl"), "utf8");
     expect(raw.trim()).toBe(
-      '{"id":1,"date":"2024-01-01T00:00:00+00:00","text":"Hello CLI"}'
+      '{"id":1,"date":"2024-01-01T00:00:00+00:00","text":"Hello CLI"}',
     );
   });
 });

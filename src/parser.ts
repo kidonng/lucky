@@ -22,7 +22,7 @@ export function normalizeChannelName(input: string): string {
     /^(?:www\.)?(?:t\.me|telegram\.me)\b/i.test(withoutAt)
   ) {
     const urlMatch = withoutAt.match(
-      /^(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me)\/(?:s\/)?([a-zA-Z0-9_]+)(?:[/?#]|$)/i
+      /^(?:https?:\/\/)?(?:www\.)?(?:t\.me|telegram\.me)\/(?:s\/)?([a-zA-Z0-9_]+)(?:[/?#]|$)/i,
     );
     if (!urlMatch?.[1] || urlMatch[1].toLowerCase() === "s") {
       throw new Error(`Invalid Telegram channel identifier: ${input}`);
@@ -94,8 +94,8 @@ function normalizeTelegramHast() {
       if (
         visible === href ||
         (strippedVisible.length > 0 &&
-          ( strippedVisible.startsWith("http://") ||
-            strippedVisible.startsWith("https://") ) &&
+          (strippedVisible.startsWith("http://") ||
+            strippedVisible.startsWith("https://")) &&
           href.startsWith(strippedVisible))
       ) {
         node.children = [{ type: "text", value: href }];
@@ -130,7 +130,10 @@ function findDirectMessageText(messageNode: Element): Element | null {
   }
 
   const replyNodes = new Set(
-    selectAll(".tgme_widget_message_reply .tgme_widget_message_text", messageNode)
+    selectAll(
+      ".tgme_widget_message_reply .tgme_widget_message_text",
+      messageNode,
+    ),
   );
 
   for (const candidate of candidates) {
@@ -141,7 +144,10 @@ function findDirectMessageText(messageNode: Element): Element | null {
   return null;
 }
 
-export function parseChannelPageHtml(pageHtml: string, channel: string): ChannelPost[] {
+export function parseChannelPageHtml(
+  pageHtml: string,
+  channel: string,
+): ChannelPost[] {
   if (!pageHtml.trim()) {
     return [];
   }
@@ -166,12 +172,21 @@ export function parseChannelPageHtml(pageHtml: string, channel: string): Channel
 
     const postChannel = dataPost.slice(0, slashIndex).toLowerCase();
     const postId = Number.parseInt(dataPost.slice(slashIndex + 1), 10);
-    if (postChannel !== normalizedChannel || !Number.isFinite(postId) || postId <= 0) {
+    if (
+      postChannel !== normalizedChannel ||
+      !Number.isFinite(postId) ||
+      postId <= 0
+    ) {
       continue;
     }
 
-    const timeNode = select(".tgme_widget_message_date time[datetime], time[datetime]", msgNode);
-    const date = String(timeNode?.properties?.dateTime ?? timeNode?.properties?.datetime ?? "").trim();
+    const timeNode = select(
+      ".tgme_widget_message_date time[datetime], time[datetime]",
+      msgNode,
+    );
+    const date = String(
+      timeNode?.properties?.dateTime ?? timeNode?.properties?.datetime ?? "",
+    ).trim();
     if (!date) {
       continue;
     }

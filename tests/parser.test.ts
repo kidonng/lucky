@@ -8,14 +8,24 @@ import {
 describe("normalizeChannelName", () => {
   test("strips @ and t.me URLs", () => {
     expect(normalizeChannelName("@my_channel")).toBe("my_channel");
-    expect(normalizeChannelName("https://t.me/s/my_channel?before=10")).toBe("my_channel");
-    expect(normalizeChannelName("https://t.me/my_channel/42")).toBe("my_channel");
+    expect(normalizeChannelName("https://t.me/s/my_channel?before=10")).toBe(
+      "my_channel",
+    );
+    expect(normalizeChannelName("https://t.me/my_channel/42")).toBe(
+      "my_channel",
+    );
   });
 
   test("rejects handle-less Telegram URLs and non-Telegram URLs", () => {
-    expect(() => normalizeChannelName("https://t.me/")).toThrow(/Invalid Telegram channel/i);
-    expect(() => normalizeChannelName("https://t.me/s/")).toThrow(/Invalid Telegram channel/i);
-    expect(() => normalizeChannelName("https://example.com/foo")).toThrow(/Invalid Telegram channel/i);
+    expect(() => normalizeChannelName("https://t.me/")).toThrow(
+      /Invalid Telegram channel/i,
+    );
+    expect(() => normalizeChannelName("https://t.me/s/")).toThrow(
+      /Invalid Telegram channel/i,
+    );
+    expect(() => normalizeChannelName("https://example.com/foo")).toThrow(
+      /Invalid Telegram channel/i,
+    );
   });
 });
 
@@ -31,7 +41,9 @@ describe("messageHtmlToMarkdown", () => {
 
     const md = messageHtmlToMarkdown(html);
     expect(md).toContain("**Hello** *world*!");
-    expect(md).toMatch(/\[Rust Wiki\]\(https:\/\/en\.wikipedia\.org\/wiki\/Rust_\\?\(programming_language\\?\)\)/);
+    expect(md).toMatch(
+      /\[Rust Wiki\]\(https:\/\/en\.wikipedia\.org\/wiki\/Rust_\\?\(programming_language\\?\)\)/,
+    );
     expect(md).toContain("https://example.com/very/long/path/to/article");
     expect(md).not.toContain("https://example.com/very/long/…");
     expect(md).toContain("[PDF](https://cdn.example.com/file.pdf)");

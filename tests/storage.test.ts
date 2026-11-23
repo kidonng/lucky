@@ -7,8 +7,9 @@ import { join } from "node:path";
 import { readChannelPosts, writeChannelPosts } from "../src/storage";
 
 const runWithBun = <A, E>(
-  effect: Effect.Effect<A, E, BunServices.BunServices>
-): Promise<A> => Effect.runPromise(effect.pipe(Effect.provide(BunServices.layer)));
+  effect: Effect.Effect<A, E, BunServices.BunServices>,
+): Promise<A> =>
+  Effect.runPromise(effect.pipe(Effect.provide(BunServices.layer)));
 
 describe("storage", () => {
   let tempDir: string;
@@ -22,7 +23,9 @@ describe("storage", () => {
   });
 
   test("readChannelPosts returns empty array when file does not exist", async () => {
-    const posts = await runWithBun(readChannelPosts(join(tempDir, "missing.jsonl")));
+    const posts = await runWithBun(
+      readChannelPosts(join(tempDir, "missing.jsonl")),
+    );
     expect(posts).toEqual([]);
   });
 
@@ -33,13 +36,13 @@ describe("storage", () => {
         { id: 3, date: "2024-01-03T00:00:00Z", text: "Third" },
         { id: 1, date: "2024-01-01T00:00:00Z", text: "Old First" },
         { id: 1, date: "2024-01-01T00:00:00Z", text: "First" },
-      ])
+      ]),
     );
 
     const raw = await readFile(filePath, "utf8");
     expect(raw).toBe(
       '{"id":1,"date":"2024-01-01T00:00:00Z","text":"First"}\n' +
-        '{"id":3,"date":"2024-01-03T00:00:00Z","text":"Third"}\n'
+        '{"id":3,"date":"2024-01-03T00:00:00Z","text":"Third"}\n',
     );
 
     await writeFile(filePath, `${raw}\n\n`, "utf8");
@@ -55,7 +58,7 @@ describe("storage", () => {
     await writeFile(
       filePath,
       '{"id":1,"date":"2024-01-01T00:00:00Z","text":"ok"}\n{"id":"not-an-int","date":"2024-01-02T00:00:00Z","text":"bad"}\n',
-      "utf8"
+      "utf8",
     );
 
     const err = await runWithBun(Effect.flip(readChannelPosts(filePath)));

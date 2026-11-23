@@ -9,6 +9,7 @@ This achieves cleaner error boundaries, schema-validated external data, declarat
 ## 2. Goals, Non-Goals, and Anti-Goals
 
 ### Goals
+
 - **Schema-backed Domain & Config (`src/types.ts`)**: Model `LuckyMode`, `ChannelPost`, `ChannelIndex`, `ChannelSummary`, and `LuckyConfig` with `effect/Schema`, and define typed domain failures with `Schema.TaggedError`.
 - **Effect Platform I/O (`src/storage.ts`, `src/build.ts`)**: Use `FileSystem.FileSystem`, `Path.Path`, and `Config` (`Config.String` / `Config.Literals`) instead of direct `node:fs` / `process.env` access.
 - **Effect HTTP & Retry (`src/scrape.ts`)**: Replace manual `fetch`, `setTimeout`, and `for`-loop retries with `HttpClient.HttpClient`, `Effect.sleep`, and `Schedule` (`Effect.retry`), and run multi-channel scraping via `Effect.forEach`.
@@ -16,15 +17,18 @@ This achieves cleaner error boundaries, schema-validated external data, declarat
 - **Test Isolation & `bun test` Continuity**: Keep `bun test` as the test runner, adapt I/O tests to Effect layers, and fix the existing `tests/build.test.ts` failure where `buildSite` unintentionally reads the repository's `lucky.config.json`.
 
 ### Non-Goals
+
 - Wrapping `src/parser.ts` or `src/links.ts` (`unified` pipelines) in `Effect` or `Context.Service`.
 - Modifying `src/index.html` or changing redirect / UI behavior.
 - Changing the on-disk format of `data/<channel>.jsonl` (`{"id":...,"date":"...","text":"..."}`, sorted ascending by `id`) or the JSON schema of `dist/data/*.json`.
 
 ### Anti-Goals
+
 - Creating custom `Context.Service` + `Layer` wrappers for internal domain functions (`PostStorage`, `TelegramScraper`, `SiteBuilder`) where plain `Effect.fn` functions consuming standard Effect platform services suffice.
 - Replacing clear pagination loops with `Stream.paginate` or rewriting small JSONL files through `Stream` + `Ndjson` channels just for the sake of using streams.
 
 ## 3. Constraints
+
 - **Runtime & Toolchain**: `bun` (managed via `mise`), TypeScript `strict: true` with `noUncheckedIndexedAccess: true` and `verbatimModuleSyntax: true` in `tsconfig.json`.
 - **Effect v4 APIs**: Strictly use Effect `^4.1.5` and `@effect/platform-bun` `^4.1.5` APIs documented in `node_modules/effect/AGENTS.md` and `node_modules/@effect/platform-bun/AGENTS.md`.
 - **CI & CLI Compatibility**: Existing scripts and `.github/workflows/lucky.yml` invocations must continue to work unchanged:
@@ -34,21 +38,26 @@ This achieves cleaner error boundaries, schema-validated external data, declarat
 ## 4. Approaches Considered
 
 ### Approach A: Lightweight `Effect.fn` + `Schema` + Standard Platform Services (Selected)
+
 - **How it works**: Keep `parser.ts` and `links.ts` pure. Model domain/config types and tagged errors with `Schema`. Implement `storage.ts`, `scrape.ts`, and `build.ts` as `Effect.fn` functions requiring `FileSystem.FileSystem`, `Path.Path`, and `HttpClient.HttpClient`. Implement `cli.ts` with `effect/cli` + `BunServices.layer` + `BunHttpClient.layer` + `BunRuntime.runMain`.
 - **Trade-offs**: Minimal boilerplate, directly exercises the valuable parts of Effect v4 (`Schema`, `FileSystem`, `HttpClient`, `Schedule`, `Config`, `effect/cli`), and remains simple to test in `bun test`.
 
 ### Approach B: Full Custom `Context.Service` + `Stream` / `Ndjson` Pipeline
+
 - **How it works**: Wrap storage, scraper, and builder into `Context.Service` classes with static layers, stream JSONL via `Ndjson`, and model pagination with `Stream.paginate`.
 - **Trade-offs**: Rejected as over-engineered for a ~800-LOC CLI tool, adding indirection without meaningful architectural gain.
 
 ## 5. Architecture & Detailed Design
 
 ### 5.1 Pure Core Boundary (`src/parser.ts`, `src/links.ts`)
+
 - `src/parser.ts` and `src/links.ts` remain synchronous pure TypeScript modules with no `effect` imports.
 - `normalizeChannelName(input: string): string` stays pure in `src/parser.ts` so `tests/parser.test.ts` and `tests/links.test.ts` remain unchanged. Effectful callers (`scrape.ts`, `build.ts`) wrap `normalizeChannelName` via `Effect.try({ try: () => normalizeChannelName(input), catch: (cause) => new InvalidChannelError({ input, cause }) })`.
 
 ### 5.2 Domain Schemas & Errors (`src/types.ts`)
+
 Define schemas and inferred types:
+
 - `LuckyMode = Schema.Literals(["post", "link"])`
 - `ChannelPost = Schema.Struct({ id: Schema.Int, date: Schema.String, text: Schema.String })`
 - `ChannelIndex = Schema.Struct({ channel: Schema.String, postCount: Schema.Int, linkCount: Schema.Int, posts: Schema.Array(Schema.Int), links: Schema.Array(Schema.String) })`
@@ -56,6 +65,7 @@ Define schemas and inferred types:
 - `LuckyConfig = Schema.Struct({ channels: Schema.optional(Schema.Array(Schema.String)), defaultChannel: Schema.optional(Schema.String), defaultMode: Schema.optional(LuckyMode) })`
 
 Define typed domain errors with `Schema.TaggedError`:
+
 - `InvalidChannelError`: `{ input: string, cause: unknown }`
 - `ConfigParseError`: `{ path: string, cause: unknown }`
 - `StorageDecodeError`: `{ path: string, line: number, cause: unknown }`
@@ -64,6 +74,7 @@ Define typed domain errors with `Schema.TaggedError`:
 - `NoChannelsConfiguredError`: `{ configPath: string }`
 
 ### 5.3 Storage (`src/storage.ts`)
+
 - Keep `serializePostJsonlLine(post: ChannelPost): string` (producing exact `{"id":...,"date":"...","text":"..."}` key order).
 - `readChannelPosts(jsonlPath: string)`: `Effect.fn("storage.readChannelPosts")` requiring `FileSystem.FileSystem`.
   - If `!(yield* fs.exists(jsonlPath))`, return `[]`.
@@ -75,6 +86,7 @@ Define typed domain errors with `Schema.TaggedError`:
   - Deduplicate by `id`, sort ascending by `id`, serialize lines with trailing newline when non-empty, and write via `fs.writeFileString`.
 
 ### 5.4 Scraper (`src/scrape.ts`)
+
 - `fetchTelegramPage(url: string)`: `Effect.fn("scrape.fetchTelegramPage")` requiring `HttpClient.HttpClient`.
   - Executes `client.get(url, { headers: { accept: "text/html" } })`.
   - Inspects `response.status`:
@@ -90,6 +102,7 @@ Define typed domain errors with `Schema.TaggedError`:
 - `scrapeChannels(channels: ReadonlyArray<string>, options)`: `Effect.fn("scrape.scrapeChannels")` iterating with `Effect.forEach(..., { concurrency: options.concurrency ?? 1 })` (defaulting to sequential `1` to be polite to `t.me/s/`).
 
 ### 5.5 Builder (`src/build.ts`)
+
 - `loadLuckyConfig(configPath = "lucky.config.json")`: `Effect.fn("build.loadLuckyConfig")` requiring `FileSystem.FileSystem`.
   - Returns `{}` when `!yield* fs.exists(configPath)`.
   - Reads string and decodes via `Schema.decodeUnknownEffect(Schema.fromJsonString(LuckyConfig))`, mapping errors to `ConfigParseError`.
@@ -102,6 +115,7 @@ Define typed domain errors with `Schema.TaggedError`:
   - Renders and writes `dist/index.html`, returning `BuildResult`.
 
 ### 5.6 CLI (`src/cli.ts`)
+
 - Define `scrapeCommand` (`Command.make("scrape", ...)`):
   - `channels`: `Argument.String("channels").pipe(Argument.variadic())`
   - `full`: `Flag.Boolean("full").pipe(Flag.withAlias("f"), Flag.withDefault(false))`
@@ -121,6 +135,7 @@ Define typed domain errors with `Schema.TaggedError`:
 - Main entrypoint (`if (import.meta.main)`): `luckyCommand.pipe(Command.run({ version: "0.1.0" }), Effect.provide(Layer.mergeAll(BunServices.layer, BunHttpClient.layer)), BunRuntime.runMain)`.
 
 ### 5.7 Testing Strategy (`tests/*.test.ts`)
+
 - `tests/parser.test.ts` and `tests/links.test.ts` remain unchanged.
 - `tests/scrape.test.ts`: runs `scrapeChannel` via `Effect.runPromise` provided with `BunServices.layer` and a mock `HttpClient` layer (`Layer.succeed(HttpClient.HttpClient, HttpClient.make(...))`). Add test coverage for retry on HTTP `429`/`500` and fail-fast on `404`.
 - `tests/build.test.ts`: pass an isolated `configPath: join(tempDir, "lucky.config.json")` to the test case that previously leaked into the repo's `lucky.config.json`, run `buildSite` via `Effect.runPromise` with `BunServices.layer`, and add coverage for `ConfigProvider` env overrides (`LUCKY_DEFAULT_CHANNEL`, `LUCKY_DEFAULT_MODE`) and invalid `lucky.config.json` (`ConfigParseError`).
