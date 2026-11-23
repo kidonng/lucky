@@ -1,3 +1,8 @@
+import {
+  matchConfiguredMirror,
+  normalizeMirrorBase,
+  resolveMirrorBase,
+} from "../../src/mirror.ts";
 import type {
   ChannelIndex,
   ChannelSummary,
@@ -10,6 +15,27 @@ const DEFAULT_CONFIG: LuckyRuntimeConfig = {
   defaultMode: "post",
   channels: [],
 };
+
+function normalizeConfigMirrors(raw: unknown): Array<string> {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const mirrors: Array<string> = [];
+
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    try {
+      const normalized = normalizeMirrorBase(item);
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        mirrors.push(normalized);
+      }
+    } catch {
+      // Ignore malformed mirror entries cleanly.
+    }
+  }
+
+  return mirrors;
+}
 
 function normalizeRuntimeConfig(raw: unknown): LuckyRuntimeConfig {
   if (!raw || typeof raw !== "object") {
@@ -37,8 +63,14 @@ function normalizeRuntimeConfig(raw: unknown): LuckyRuntimeConfig {
         ];
       })
     : [];
+  const mirrors = normalizeConfigMirrors(obj.mirrors);
 
-  return { defaultChannel, defaultMode, channels };
+  return {
+    defaultChannel,
+    defaultMode,
+    channels,
+    ...(mirrors.length > 0 ? { mirrors } : {}),
+  };
 }
 
 export function readEmbeddedConfig(
@@ -76,11 +108,13 @@ export function resolveInitialParams(
 ): {
   resolvedChannel: string | null;
   resolvedMode: LuckyMode;
+  resolvedMirror: string | null;
   forceUi: boolean;
 } {
   const params = new URLSearchParams(search);
   const rawChannel = params.get("channel") || params.get("c");
   const rawMode = params.get("mode") || params.get("m");
+  const rawMirror = params.get("mirror");
   const forceUi = params.get("ui") === "1";
 
   const fallbackSingle =
@@ -96,8 +130,11 @@ export function resolveInitialParams(
       : cfg.defaultMode === "link"
         ? "link"
         : "post";
+  const resolvedMirror = matchConfiguredMirror(rawMirror, cfg.mirrors ?? [], {
+    allowBareHost: true,
+  });
 
-  return { resolvedChannel, resolvedMode, forceUi };
+  return { resolvedChannel, resolvedMode, resolvedMirror, forceUi };
 }
 
 export function pickRandom<T>(
@@ -113,16 +150,34 @@ export function pickTargetUrl(
   data: ChannelIndex,
   mode: LuckyMode,
   rng: () => number = Math.random,
+  options?: {
+    mirrorBase?: string | null;
+  },
 ): string | null {
   if (mode === "link") {
     return pickRandom(data.links, rng);
   }
   const postId = pickRandom(data.posts, rng);
-  return postId ? `https://t.me/${data.channel}/${postId}` : null;
+  const base = options?.mirrorBase ?? "https://t.me";
+  return postId ? `${base}/${data.channel}/${postId}` : null;
 }
 
-export function buildShareQuery(channel: string, mode: LuckyMode): string {
-  return `?c=${encodeURIComponent(channel)}&m=${mode}`;
+function formatMirrorQueryValue(mirror: string): string {
+  try {
+    return new URL(normalizeMirrorBase(mirror)).host;
+  } catch {
+    return mirror;
+  }
+}
+
+export function buildShareQuery(
+  channel: string,
+  mode: LuckyMode,
+  mirror?: string | null,
+): string {
+  const baseQuery = `?c=${encodeURIComponent(channel)}&m=${mode}`;
+  if (!mirror) return baseQuery;
+  return `${baseQuery}&mirror=${encodeURIComponent(formatMirrorQueryValue(mirror))}`;
 }
 
 export function resolveChannelList(
@@ -165,10 +220,21 @@ export async function resolveLuckyTarget(
   options?: {
     fetchImpl?: typeof fetch;
     rng?: () => number;
+    mirrors?: ReadonlyArray<string>;
+    mirrorParam?: string | null;
+    referrer?: string | null;
   },
 ): Promise<LuckyTargetResolution> {
   const data = await fetchChannelData(channel, cache, options?.fetchImpl);
-  const target = pickTargetUrl(data, mode, options?.rng);
+  const referrer =
+    options?.referrer ??
+    (typeof document !== "undefined" ? document.referrer : undefined);
+  const mirrorBase = resolveMirrorBase({
+    mirrorParam: options?.mirrorParam,
+    referrer,
+    mirrors: options?.mirrors,
+  });
+  const target = pickTargetUrl(data, mode, options?.rng, { mirrorBase });
   if (target) {
     return { ok: true, target };
   }

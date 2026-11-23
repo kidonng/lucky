@@ -56,7 +56,11 @@ export function App({ config }: AppProps) {
 
     (async () => {
       try {
-        const result = await resolveLuckyTarget(ch, mode, cacheRef.current);
+        const result = await resolveLuckyTarget(ch, mode, cacheRef.current, {
+          mirrors: config.mirrors,
+          mirrorParam: initial.resolvedMirror,
+          referrer: document.referrer,
+        });
         if (cancelled) return;
         if (!result.ok) {
           setSelectedChannel(ch);
@@ -88,7 +92,13 @@ export function App({ config }: AppProps) {
     return () => {
       cancelled = true;
     };
-  }, [shouldAutoRedirect, initial.resolvedChannel, initial.resolvedMode]);
+  }, [
+    shouldAutoRedirect,
+    initial.resolvedChannel,
+    initial.resolvedMode,
+    initial.resolvedMirror,
+    config.mirrors,
+  ]);
 
   async function handleLuckyClick() {
     if (!selectedChannel) {
@@ -102,6 +112,11 @@ export function App({ config }: AppProps) {
         selectedChannel,
         selectedMode,
         cacheRef.current,
+        {
+          mirrors: config.mirrors,
+          mirrorParam: initial.resolvedMirror,
+          referrer: document.referrer,
+        },
       );
       if (!result.ok) {
         setNotice(
@@ -127,7 +142,7 @@ export function App({ config }: AppProps) {
   async function handleCopyShare(mode: LuckyMode) {
     if (!selectedChannel) return;
     const base = `${window.location.origin}${window.location.pathname}`;
-    const fullUrl = `${base}${buildShareQuery(selectedChannel, mode)}`;
+    const fullUrl = `${base}${buildShareQuery(selectedChannel, mode, initial.resolvedMirror)}`;
     try {
       await navigator.clipboard.writeText(fullUrl);
       setCopiedMode(mode);
@@ -262,7 +277,7 @@ export function App({ config }: AppProps) {
             ] as const
           ).map(({ mode, label }) => {
             const query = selectedChannel
-              ? buildShareQuery(selectedChannel, mode)
+              ? buildShareQuery(selectedChannel, mode, initial.resolvedMirror)
               : null;
             const href = query ? `${basePath}${query}` : "#";
             return (

@@ -8,7 +8,9 @@ import {
 
 describe("mirror utilities", () => {
   test("normalizeMirrorBase normalizes hosts, URLs, ports, and path prefixes", () => {
-    expect(normalizeMirrorBase("tg.example.com")).toBe("https://tg.example.com");
+    expect(normalizeMirrorBase("tg.example.com")).toBe(
+      "https://tg.example.com",
+    );
     expect(normalizeMirrorBase("https://TG.EXAMPLE.COM:443/")).toBe(
       "https://tg.example.com",
     );
