@@ -1,9 +1,23 @@
+import { BunServices } from "@effect/platform-bun";
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { ConfigProvider, Effect, Layer } from "effect";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildSite } from "../src/build";
+import { buildSite, loadLuckyConfig } from "../src/build";
 import { writeChannelPosts } from "../src/storage";
+
+const runWithBun = <A, E>(
+  effect: Effect.Effect<A, E, BunServices.BunServices>,
+  extraLayer?: Layer.Layer<never>
+): Promise<A> =>
+  Effect.runPromise(
+    effect.pipe(
+      Effect.provide(
+        extraLayer ? Layer.mergeAll(BunServices.layer, extraLayer) : BunServices.layer
+      )
+    )
+  );
 
 describe("buildSite", () => {
   let tempDir: string;
@@ -19,17 +33,23 @@ describe("buildSite", () => {
   test("compiles data/*.jsonl into dist/data/*.json, channels.json, and dist/index.html with default config", async () => {
     const dataDir = join(tempDir, "data");
     const outDir = join(tempDir, "dist");
+    const configPath = join(tempDir, "lucky.config.json");
 
-    await writeChannelPosts(join(dataDir, "alpha.jsonl"), [
-      { id: 10, date: "2024-01-01T00:00:00Z", text: "Hello https://a.example.com" },
-      { id: 12, date: "2024-01-02T00:00:00Z", text: "Media only" },
-    ]);
+    await runWithBun(
+      writeChannelPosts(join(dataDir, "alpha.jsonl"), [
+        { id: 10, date: "2024-01-01T00:00:00Z", text: "Hello https://a.example.com" },
+        { id: 12, date: "2024-01-02T00:00:00Z", text: "Media only" },
+      ])
+    );
 
-    const res = await buildSite({
-      dataDir,
-      outDir,
-      defaultMode: "link",
-    });
+    const res = await runWithBun(
+      buildSite({
+        dataDir,
+        outDir,
+        configPath,
+        defaultMode: "link",
+      })
+    );
 
     expect(res.defaultChannel).toBe("alpha");
     expect(res.defaultMode).toBe("link");
@@ -56,37 +76,122 @@ describe("buildSite", () => {
   test("resolves defaultChannel case-insensitively against built channel filenames", async () => {
     const dataDir = join(tempDir, "data");
     const outDir = join(tempDir, "dist");
+    const configPath = join(tempDir, "lucky.config.json");
 
-    await writeChannelPosts(join(dataDir, "MyChan.jsonl"), [
-      { id: 1, date: "2024-01-01T00:00:00Z", text: "Post 1" },
-    ]);
+    await runWithBun(
+      writeChannelPosts(join(dataDir, "MyChan.jsonl"), [
+        { id: 1, date: "2024-01-01T00:00:00Z", text: "Post 1" },
+      ])
+    );
 
-    const res = await buildSite({
-      dataDir,
-      outDir,
-      defaultChannel: "mychan",
-    });
+    const res = await runWithBun(
+      buildSite({
+        dataDir,
+        outDir,
+        configPath,
+        defaultChannel: "mychan",
+      })
+    );
 
     expect(res.defaultChannel).toBe("MyChan");
+  });
+
+  test("loadLuckyConfig fails with ConfigParseError on malformed JSON or invalid defaultMode", async () => {
+    const badJsonPath = join(tempDir, "bad.json");
+    await writeFile(badJsonPath, "{not-json", "utf8");
+
+    const jsonErr = await runWithBun(Effect.flip(loadLuckyConfig(badJsonPath)));
+    expect(jsonErr._tag).toBe("ConfigParseError");
+
+    const badModePath = join(tempDir, "bad-mode.json");
+    await writeFile(badModePath, JSON.stringify({ defaultMode: "bad" }), "utf8");
+
+    const modeErr = await runWithBun(Effect.flip(loadLuckyConfig(badModePath)));
+    expect(modeErr._tag).toBe("ConfigParseError");
+  });
+
+  test("honors LUCKY_DEFAULT_CHANNEL and LUCKY_DEFAULT_MODE env config and rejects invalid LUCKY_DEFAULT_MODE", async () => {
+    const dataDir = join(tempDir, "data");
+    const outDir = join(tempDir, "dist");
+    const configPath = join(tempDir, "lucky.config.json");
+
+    await runWithBun(
+      writeChannelPosts(join(dataDir, "alpha.jsonl"), [
+        { id: 1, date: "2024-01-01T00:00:00Z", text: "Post 1" },
+      ])
+    );
+    await runWithBun(
+      writeChannelPosts(join(dataDir, "beta.jsonl"), [
+        { id: 2, date: "2024-01-02T00:00:00Z", text: "Post 2" },
+      ])
+    );
+
+    const envRes = await runWithBun(
+      buildSite({ dataDir, outDir, configPath }),
+      ConfigProvider.layer(
+        ConfigProvider.fromEnvRecord({
+          LUCKY_DEFAULT_CHANNEL: "beta",
+          LUCKY_DEFAULT_MODE: "link",
+        })
+      )
+    );
+    expect(envRes.defaultChannel).toBe("beta");
+    expect(envRes.defaultMode).toBe("link");
+
+    const invalidEnvErr = await runWithBun(
+      Effect.flip(buildSite({ dataDir, outDir, configPath })),
+      ConfigProvider.layer(
+        ConfigProvider.fromEnvRecord({
+          LUCKY_DEFAULT_MODE: "invalid",
+        })
+      )
+    );
+    expect(invalidEnvErr._tag).toBe("ConfigError");
+  });
+
+  test("fails with InvalidChannelError when defaultChannel is invalid", async () => {
+    const dataDir = join(tempDir, "data");
+    const outDir = join(tempDir, "dist");
+    const configPath = join(tempDir, "lucky.config.json");
+
+    const err = await runWithBun(
+      Effect.flip(
+        buildSite({
+          dataDir,
+          outDir,
+          configPath,
+          defaultChannel: "https://example.com/bad",
+        })
+      )
+    );
+    expect(err._tag).toBe("InvalidChannelError");
   });
 
   test("built index.html inline script executes redirects for post and link modes and falls back when link pool is empty", async () => {
     const dataDir = join(tempDir, "data");
     const outDir = join(tempDir, "dist");
+    const configPath = join(tempDir, "lucky.config.json");
 
-    await writeChannelPosts(join(dataDir, "alpha.jsonl"), [
-      { id: 10, date: "2024-01-01T00:00:00Z", text: "Hello https://a.example.com/target" },
-    ]);
-    await writeChannelPosts(join(dataDir, "nolinks.jsonl"), [
-      { id: 20, date: "2024-01-02T00:00:00Z", text: "Just plain text" },
-    ]);
+    await runWithBun(
+      writeChannelPosts(join(dataDir, "alpha.jsonl"), [
+        { id: 10, date: "2024-01-01T00:00:00Z", text: "Hello https://a.example.com/target" },
+      ])
+    );
+    await runWithBun(
+      writeChannelPosts(join(dataDir, "nolinks.jsonl"), [
+        { id: 20, date: "2024-01-02T00:00:00Z", text: "Just plain text" },
+      ])
+    );
 
-    await buildSite({
-      dataDir,
-      outDir,
-      defaultChannel: "alpha",
-      defaultMode: "post",
-    });
+    await runWithBun(
+      buildSite({
+        dataDir,
+        outDir,
+        configPath,
+        defaultChannel: "alpha",
+        defaultMode: "post",
+      })
+    );
 
     const html = await readFile(join(outDir, "index.html"), "utf8");
     const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
@@ -186,7 +291,7 @@ describe("buildSite", () => {
       const awaitableScript = scriptBody.replace("(async function () {", "return (async function () {");
       const fn = new Function("window", "document", "fetch", awaitableScript);
       await fn(fakeWindow, fakeDocument, fakeFetch);
-      return { replacedUrl, elements, radios };
+      return { replacedUrl: replacedUrl as string | null, elements, radios };
     }
 
     const postRun = await runFrontendScript("");
@@ -197,7 +302,7 @@ describe("buildSite", () => {
 
     const emptyLinkRun = await runFrontendScript("?c=nolinks&m=link");
     expect(emptyLinkRun.replacedUrl).toBeNull();
-    expect(emptyLinkRun.elements["ui-view"].style.display).toBe("block");
-    expect(emptyLinkRun.elements["notice-box"].textContent).toContain("没有提取到外部链接");
+    expect(emptyLinkRun.elements["ui-view"]?.style.display).toBe("block");
+    expect(emptyLinkRun.elements["notice-box"]?.textContent).toContain("没有提取到外部链接");
   });
 });

@@ -1,31 +1,19 @@
-import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { Config, Effect, FileSystem, Option, Path, Schema } from "effect";
 import { extractChannelLinks } from "./links";
 import { normalizeChannelName } from "./parser";
 import { readChannelPosts } from "./storage";
-import type {
-  ChannelIndex,
-  ChannelSummary,
-  LuckyConfig,
-  LuckyMode,
+import {
+  type ChannelIndex,
+  type ChannelSummary,
+  ConfigParseError,
+  InvalidChannelError,
+  type LuckyConfig,
+  LuckyConfigJson,
+  type LuckyMode,
 } from "./types";
-const INDEX_HTML_TEMPLATE_PATH = new URL("./index.html", import.meta.url);
 
-export async function renderIndexHtml(config: {
-  defaultChannel: string | null;
-  defaultMode: LuckyMode;
-  channels: ChannelSummary[];
-}): Promise<string> {
-  const template = await readFile(INDEX_HTML_TEMPLATE_PATH, "utf8");
-  const serializedConfig = JSON.stringify({
-    defaultChannel: config.defaultChannel,
-    defaultMode: config.defaultMode,
-    channels: config.channels,
-  }).replace(/</g, "\\u003c");
-
-  return template.replace("__LUCKY_CONFIG_JSON__", () => serializedConfig);
-}
+const INDEX_HTML_TEMPLATE_URL = new URL("./index.html", import.meta.url);
+const decodeLuckyConfigJson = Schema.decodeUnknownEffect(LuckyConfigJson);
 
 export interface BuildOptions {
   dataDir?: string;
@@ -36,111 +24,157 @@ export interface BuildOptions {
 }
 
 export interface BuildResult {
-  channels: ChannelSummary[];
+  channels: Array<ChannelSummary>;
   defaultChannel: string | null;
   defaultMode: LuckyMode;
   outDir: string;
 }
 
-export async function loadLuckyConfig(
-  configPath = "lucky.config.json"
-): Promise<LuckyConfig> {
-  if (!existsSync(configPath)) {
-    return {};
+export const loadLuckyConfig = Effect.fn("build.loadLuckyConfig")(
+  function*(configPath = "lucky.config.json") {
+    const fs = yield* FileSystem.FileSystem;
+    if (!(yield* fs.exists(configPath))) {
+      return {} satisfies LuckyConfig;
+    }
+
+    const raw = yield* fs.readFileString(configPath);
+    return yield* decodeLuckyConfigJson(raw).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ConfigParseError({
+            path: configPath,
+            cause,
+          })
+      )
+    );
   }
-  const raw = await readFile(configPath, "utf8");
-  return JSON.parse(raw) as LuckyConfig;
-}
+);
 
-function resolveMode(value: string | undefined): LuckyMode | undefined {
-  if (value === "post" || value === "link") {
-    return value;
+export const renderIndexHtml = Effect.fn("build.renderIndexHtml")(
+  function*(config: {
+    defaultChannel: string | null;
+    defaultMode: LuckyMode;
+    channels: ReadonlyArray<ChannelSummary>;
+  }) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const templatePath = yield* path.fromFileUrl(INDEX_HTML_TEMPLATE_URL);
+    const template = yield* fs.readFileString(templatePath);
+
+    const serializedConfig = JSON.stringify({
+      defaultChannel: config.defaultChannel,
+      defaultMode: config.defaultMode,
+      channels: config.channels,
+    }).replace(/</g, "\\u003c");
+
+    return template.replace("__LUCKY_CONFIG_JSON__", () => serializedConfig);
   }
-  return undefined;
-}
+);
 
-export async function buildSite(options: BuildOptions = {}): Promise<BuildResult> {
-  const dataDir = options.dataDir ?? "data";
-  const outDir = options.outDir ?? "dist";
-  const fileConfig = await loadLuckyConfig(options.configPath);
+export const buildSite = Effect.fn("build.buildSite")(
+  function*(options: BuildOptions = {}) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
 
-  const outDataDir = join(outDir, "data");
-  await mkdir(outDataDir, { recursive: true });
+    const dataDir = options.dataDir ?? "data";
+    const outDir = options.outDir ?? "dist";
+    const fileConfig = yield* loadLuckyConfig(options.configPath);
 
-  const entries = existsSync(dataDir) ? await readdir(dataDir) : [];
-  const jsonlFiles = entries
-    .filter((name) => name.endsWith(".jsonl"))
-    .sort((a, b) => a.localeCompare(b));
+    const outDataDir = path.join(outDir, "data");
+    yield* fs.makeDirectory(outDataDir, { recursive: true });
 
-  const summaries: ChannelSummary[] = [];
+    const entries = (yield* fs.exists(dataDir))
+      ? yield* fs.readDirectory(dataDir)
+      : [];
+    const jsonlFiles = entries
+      .filter((name) => name.endsWith(".jsonl"))
+      .sort((a, b) => a.localeCompare(b));
 
-  for (const fileName of jsonlFiles) {
-    const channel = basename(fileName, ".jsonl");
-    const posts = await readChannelPosts(join(dataDir, fileName));
-    const postIds = posts.map((p) => p.id);
-    const links = extractChannelLinks(posts, channel);
+    const summaries: Array<ChannelSummary> = [];
 
-    const indexData: ChannelIndex = {
-      channel,
-      postCount: postIds.length,
-      linkCount: links.length,
-      posts: postIds,
-      links,
-    };
+    for (const fileName of jsonlFiles) {
+      const channel = path.basename(fileName, ".jsonl");
+      const posts = yield* readChannelPosts(path.join(dataDir, fileName));
+      const postIds = posts.map((p) => p.id);
+      const links = extractChannelLinks(posts, channel);
 
-    await writeFile(
-      join(outDataDir, `${channel}.json`),
-      `${JSON.stringify(indexData, null, 2)}\n`,
-      "utf8"
+      const indexData: ChannelIndex = {
+        channel,
+        postCount: postIds.length,
+        linkCount: links.length,
+        posts: postIds,
+        links,
+      };
+
+      yield* fs.writeFileString(
+        path.join(outDataDir, `${channel}.json`),
+        `${JSON.stringify(indexData, null, 2)}\n`
+      );
+
+      summaries.push({
+        channel,
+        postCount: postIds.length,
+        linkCount: links.length,
+      });
+    }
+
+    yield* fs.writeFileString(
+      path.join(outDataDir, "channels.json"),
+      `${JSON.stringify(summaries, null, 2)}\n`
     );
 
-    summaries.push({
-      channel,
-      postCount: postIds.length,
-      linkCount: links.length,
+    const envDefaultChannel =
+      options.defaultChannel !== undefined
+        ? Option.none<string>()
+        : yield* Config.option(Config.String("LUCKY_DEFAULT_CHANNEL"));
+    const rawDefaultChannel =
+      options.defaultChannel ??
+      Option.getOrUndefined(envDefaultChannel) ??
+      fileConfig.defaultChannel;
+
+    let defaultChannel: string | null = null;
+    if (rawDefaultChannel && rawDefaultChannel.trim()) {
+      const normalized = yield* Effect.try({
+        try: () => normalizeChannelName(rawDefaultChannel),
+        catch: (cause) =>
+          new InvalidChannelError({
+            input: rawDefaultChannel,
+            cause,
+          }),
+      });
+      const matched = summaries.find(
+        (item) => item.channel.toLowerCase() === normalized.toLowerCase()
+      );
+      defaultChannel = matched ? matched.channel : normalized;
+    } else if (summaries.length === 1 && summaries[0]) {
+      defaultChannel = summaries[0].channel;
+    }
+
+    const envDefaultMode =
+      options.defaultMode !== undefined
+        ? Option.none<LuckyMode>()
+        : yield* Config.option(
+            Config.Literals(["post", "link"], "LUCKY_DEFAULT_MODE")
+          );
+    const defaultMode: LuckyMode =
+      options.defaultMode ??
+      Option.getOrUndefined(envDefaultMode) ??
+      fileConfig.defaultMode ??
+      "post";
+
+    const html = yield* renderIndexHtml({
+      defaultChannel,
+      defaultMode,
+      channels: summaries,
     });
+
+    yield* fs.writeFileString(path.join(outDir, "index.html"), html);
+
+    return {
+      channels: summaries,
+      defaultChannel,
+      defaultMode,
+      outDir,
+    } satisfies BuildResult;
   }
-
-  await writeFile(
-    join(outDataDir, "channels.json"),
-    `${JSON.stringify(summaries, null, 2)}\n`,
-    "utf8"
-  );
-
-  const rawDefaultChannel =
-    options.defaultChannel ??
-    process.env.LUCKY_DEFAULT_CHANNEL ??
-    fileConfig.defaultChannel;
-
-  let defaultChannel: string | null = null;
-  if (rawDefaultChannel && rawDefaultChannel.trim()) {
-    const normalized = normalizeChannelName(rawDefaultChannel);
-    const matched = summaries.find(
-      (item) => item.channel.toLowerCase() === normalized.toLowerCase()
-    );
-    defaultChannel = matched ? matched.channel : normalized;
-  } else if (summaries.length === 1 && summaries[0]) {
-    defaultChannel = summaries[0].channel;
-  }
-
-  const defaultMode: LuckyMode =
-    options.defaultMode ??
-    resolveMode(process.env.LUCKY_DEFAULT_MODE) ??
-    fileConfig.defaultMode ??
-    "post";
-
-  const html = await renderIndexHtml({
-    defaultChannel,
-    defaultMode,
-    channels: summaries,
-  });
-
-  await writeFile(join(outDir, "index.html"), html, "utf8");
-
-  return {
-    channels: summaries,
-    defaultChannel,
-    defaultMode,
-    outDir,
-  };
-}
+);
