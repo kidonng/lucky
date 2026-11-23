@@ -37,6 +37,17 @@ export function normalizeChannelName(input: string): string {
   return handleMatch[1];
 }
 
+function getClassList(node: Element): string[] {
+  const className: unknown = node.properties?.className;
+  if (Array.isArray(className)) {
+    return className.map(String);
+  }
+  if (typeof className === "string") {
+    return className.split(/\s+/);
+  }
+  return [];
+}
+
 function normalizeTelegramHast() {
   return (tree: Root) => {
     visit(tree, "element", (node: Element, index, parent) => {
@@ -44,11 +55,7 @@ function normalizeTelegramHast() {
         return;
       }
 
-      const classList = Array.isArray(node.properties?.className)
-        ? node.properties.className.map(String)
-        : typeof node.properties?.className === "string"
-          ? node.properties.className.split(/\s+/)
-          : [];
+      const classList = getClassList(node);
 
       if (
         (node.tagName === "i" && classList.includes("emoji")) ||
@@ -146,11 +153,7 @@ export function parseChannelPageHtml(pageHtml: string, channel: string): Channel
   const byId = new Map<number, ChannelPost>();
 
   for (const msgNode of messageNodes) {
-    const classList = Array.isArray(msgNode.properties?.className)
-      ? msgNode.properties.className.map(String)
-      : typeof msgNode.properties?.className === "string"
-        ? msgNode.properties.className.split(/\s+/)
-        : [];
+    const classList = getClassList(msgNode);
     if (classList.includes("service_message")) {
       continue;
     }
