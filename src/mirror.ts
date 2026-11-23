@@ -1,9 +1,12 @@
-const SCHEME_WITHOUT_SLASHES_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:(?!\d+(?:\/|$))/;
+const SCHEME_WITHOUT_SLASHES_RE = /^[a-zA-Z][a-zA-Z0-9+.-]*:(?!\d+(?:[/?#]|$))/;
 
 function parseCandidateUrl(raw: string, allowBareHost: boolean): URL {
   const trimmed = raw.trim();
   if (!trimmed) {
     throw new Error("Mirror value cannot be empty");
+  }
+  if (trimmed.startsWith("/") || /^https?:\/\/\//i.test(trimmed)) {
+    throw new Error(`Invalid mirror host or URL: ${raw}`);
   }
 
   let target = trimmed;

@@ -19,10 +19,14 @@ describe("mirror utilities", () => {
     );
   });
 
-  test("normalizeMirrorBase rejects blank, non-http(s), userinfo, and query/hash inputs", () => {
+  test("normalizeMirrorBase rejects blank, path-like, non-http(s), userinfo, and query/hash inputs", () => {
     for (const bad of [
       "",
       "   ",
+      "/s",
+      "/tg.example.com",
+      "//evil.com",
+      "https:///foo",
       "ftp://tg.example.com",
       "javascript:alert(1)",
       "https://user:pass@tg.example.com",
@@ -31,6 +35,9 @@ describe("mirror utilities", () => {
     ]) {
       expect(() => normalizeMirrorBase(bad)).toThrow();
     }
+    expect(() => normalizeMirrorBase("localhost:8787?foo=1")).toThrow(
+      "Mirror URL must not contain query or hash",
+    );
   });
 
   test("normalizeMirrorList deduplicates equivalent mirrors preserving order", () => {
@@ -63,6 +70,21 @@ describe("mirror utilities", () => {
     expect(
       matchConfiguredMirror("tg.example.com", mirrors, { allowBareHost: true }),
     ).toBe("https://tg.example.com/s");
+    expect(
+      matchConfiguredMirror("/tg.example.com", mirrors, {
+        allowBareHost: true,
+      }),
+    ).toBeNull();
+    expect(
+      matchConfiguredMirror("//tg.example.com", mirrors, {
+        allowBareHost: true,
+      }),
+    ).toBeNull();
+    expect(
+      matchConfiguredMirror("localhost:8787?foo=1", mirrors, {
+        allowBareHost: true,
+      }),
+    ).toBe("http://localhost:8787");
   });
 
   test("resolveMirrorBase prioritizes valid mirrorParam over referrer and falls back safely", () => {
