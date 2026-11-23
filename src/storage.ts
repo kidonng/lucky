@@ -1,7 +1,11 @@
-import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
-import type { ChannelPost } from "./types";
+import { Effect, FileSystem, Path, Schema } from "effect";
+import {
+  type ChannelPost,
+  ChannelPostJson,
+  StorageDecodeError,
+} from "./types";
+
+const decodePostJson = Schema.decodeUnknownEffect(ChannelPostJson);
 
 export function serializePostJsonlLine(post: ChannelPost): string {
   return JSON.stringify({
@@ -11,58 +15,63 @@ export function serializePostJsonlLine(post: ChannelPost): string {
   });
 }
 
-export async function readChannelPosts(jsonlPath: string): Promise<ChannelPost[]> {
-  if (!existsSync(jsonlPath)) {
-    return [];
-  }
-
-  const content = await readFile(jsonlPath, "utf8");
-  const byId = new Map<number, ChannelPost>();
-
-  for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) {
-      continue;
+export const readChannelPosts = Effect.fn("storage.readChannelPosts")(
+  function*(jsonlPath: string) {
+    const fs = yield* FileSystem.FileSystem;
+    if (!(yield* fs.exists(jsonlPath))) {
+      return [];
     }
 
-    const parsed = JSON.parse(line) as Partial<ChannelPost>;
-    if (
-      typeof parsed.id === "number" &&
-      Number.isFinite(parsed.id) &&
-      typeof parsed.date === "string" &&
-      typeof parsed.text === "string"
-    ) {
-      byId.set(parsed.id, {
-        id: parsed.id,
-        date: parsed.date,
-        text: parsed.text,
+    const content = yield* fs.readFileString(jsonlPath);
+    const byId = new Map<number, ChannelPost>();
+    const rawLines = content.split(/\r?\n/);
+
+    for (let index = 0; index < rawLines.length; index++) {
+      const line = rawLines[index]?.trim() ?? "";
+      if (!line) {
+        continue;
+      }
+
+      const post = yield* decodePostJson(line).pipe(
+        Effect.mapError(
+          (cause) =>
+            new StorageDecodeError({
+              path: jsonlPath,
+              line: index + 1,
+              cause,
+            })
+        )
+      );
+
+      byId.set(post.id, post);
+    }
+
+    return Array.from(byId.values()).sort((a, b) => a.id - b.id);
+  }
+);
+
+export const writeChannelPosts = Effect.fn("storage.writeChannelPosts")(
+  function*(jsonlPath: string, posts: ReadonlyArray<ChannelPost>) {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+
+    yield* fs.makeDirectory(path.dirname(jsonlPath), { recursive: true });
+
+    const byId = new Map<number, ChannelPost>();
+    for (const post of posts) {
+      byId.set(post.id, {
+        id: post.id,
+        date: post.date,
+        text: post.text,
       });
     }
+
+    const sorted = Array.from(byId.values()).sort((a, b) => a.id - b.id);
+    const body =
+      sorted.length > 0
+        ? `${sorted.map(serializePostJsonlLine).join("\n")}\n`
+        : "";
+
+    yield* fs.writeFileString(jsonlPath, body);
   }
-
-  return Array.from(byId.values()).sort((a, b) => a.id - b.id);
-}
-
-export async function writeChannelPosts(
-  jsonlPath: string,
-  posts: ChannelPost[]
-): Promise<void> {
-  await mkdir(dirname(jsonlPath), { recursive: true });
-
-  const byId = new Map<number, ChannelPost>();
-  for (const post of posts) {
-    byId.set(post.id, {
-      id: post.id,
-      date: post.date,
-      text: post.text,
-    });
-  }
-
-  const sorted = Array.from(byId.values()).sort((a, b) => a.id - b.id);
-  const body =
-    sorted.length > 0
-      ? `${sorted.map(serializePostJsonlLine).join("\n")}\n`
-      : "";
-
-  await writeFile(jsonlPath, body, "utf8");
-}
+);
