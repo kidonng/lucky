@@ -32,6 +32,7 @@ export const LuckyRuntimeConfig = Schema.Struct({
   defaultChannel: Schema.NullOr(Schema.String),
   defaultMode: LuckyMode,
   channels: Schema.Array(ChannelSummary),
+  mirrors: Schema.optional(Schema.Array(Schema.String)),
 });
 export type LuckyRuntimeConfig = (typeof LuckyRuntimeConfig)["Type"];
 
@@ -41,6 +42,7 @@ export const LuckyConfig = Schema.Struct({
   channels: Schema.optional(Schema.Array(Schema.String)),
   defaultChannel: Schema.optional(Schema.String),
   defaultMode: Schema.optional(LuckyMode),
+  mirrors: Schema.optional(Schema.Array(Schema.String)),
 });
 export type LuckyConfig = (typeof LuckyConfig)["Type"];
 
@@ -55,6 +57,18 @@ export class InvalidChannelError extends Schema.TaggedError<InvalidChannelError>
 ) {
   override get message(): string {
     return `Invalid Telegram channel identifier: ${JSON.stringify(this.input)}`;
+  }
+}
+
+export class InvalidMirrorError extends Schema.TaggedError<InvalidMirrorError>()(
+  "InvalidMirrorError",
+  {
+    input: Schema.String,
+    cause: Schema.Unknown,
+  },
+) {
+  override get message(): string {
+    return `Invalid Telegram mirror host or URL: ${JSON.stringify(this.input)}`;
   }
 }
 
