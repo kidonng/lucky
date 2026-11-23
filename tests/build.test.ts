@@ -304,4 +304,77 @@ describe("buildSite", () => {
       channels: [{ channel: "alpha", postCount: 1, linkCount: 1 }],
     });
   });
+
+  test("reads mirrors from lucky.config.json, normalizes/deduplicates them, and embeds them into dist/index.html", async () => {
+    const dataDir = join(tempDir, "data");
+    const outDir = join(tempDir, "dist");
+    const configPath = join(tempDir, "lucky.config.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        mirrors: [
+          "tg.example.com",
+          "https://TG.EXAMPLE.COM/",
+          "http://localhost:8787/s/",
+        ],
+      }),
+      "utf8",
+    );
+    await runWithBun(
+      writeChannelPosts(join(dataDir, "alpha.jsonl"), [
+        { id: 10, date: "2024-01-01T00:00:00Z", text: "Post 10" },
+      ]),
+    );
+
+    const res = await runWithBun(buildSite({ dataDir, outDir, configPath }));
+    expect(res.mirrors).toEqual([
+      "https://tg.example.com",
+      "http://localhost:8787/s",
+    ]);
+
+    const html = await readFile(join(outDir, "index.html"), "utf8");
+    const configMatch = html.match(
+      /<script id="lucky-config" type="application\/json">([\s\S]*?)<\/script>/,
+    );
+    expect(configMatch?.[1]).toBeDefined();
+    expect(JSON.parse(configMatch![1]!)).toEqual({
+      defaultChannel: "alpha",
+      defaultMode: "post",
+      channels: [{ channel: "alpha", postCount: 1, linkCount: 0 }],
+      mirrors: ["https://tg.example.com", "http://localhost:8787/s"],
+    });
+  });
+
+  test("fails with InvalidMirrorError before creating outDir when configured mirrors contain an invalid entry", async () => {
+    const dataDir = join(tempDir, "data");
+    const outDir = join(tempDir, "dist");
+    const configPath = join(tempDir, "lucky.config.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({ mirrors: ["ftp://bad.example.com"] }),
+      "utf8",
+    );
+
+    const fileErr = await runWithBun(
+      Effect.flip(buildSite({ dataDir, outDir, configPath })),
+    );
+    expect(fileErr._tag).toBe("InvalidMirrorError");
+    expect(existsSync(outDir)).toBe(false);
+
+    const optOutDir = join(tempDir, "dist-opt");
+    const optErr = await runWithBun(
+      Effect.flip(
+        buildSite({
+          dataDir,
+          outDir: optOutDir,
+          configPath: join(tempDir, "missing.json"),
+          mirrors: ["   "],
+        }),
+      ),
+    );
+    expect(optErr._tag).toBe("InvalidMirrorError");
+    expect(existsSync(optOutDir)).toBe(false);
+  });
 });

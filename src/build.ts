@@ -1,6 +1,7 @@
 import { Config, Effect, FileSystem, Option, Path, Schema } from "effect";
 import { buildWeb, type WebBundle } from "../web/build";
 import { extractChannelLinks } from "./links";
+import { normalizeMirrorBase } from "./mirror";
 import { normalizeChannelName } from "./parser";
 import { readChannelPosts } from "./storage";
 import {
@@ -8,6 +9,7 @@ import {
   type ChannelSummary,
   ConfigParseError,
   InvalidChannelError,
+  InvalidMirrorError,
   type LuckyConfig,
   LuckyConfigJson,
   type LuckyMode,
@@ -24,12 +26,14 @@ export interface BuildOptions {
   configPath?: string;
   defaultChannel?: string;
   defaultMode?: LuckyMode;
+  mirrors?: ReadonlyArray<string>;
 }
 
 export interface BuildResult {
   channels: Array<ChannelSummary>;
   defaultChannel: string | null;
   defaultMode: LuckyMode;
+  mirrors: Array<string>;
   outDir: string;
 }
 
@@ -42,6 +46,30 @@ const normalizeChannelEffect = (input: string) =>
         cause,
       }),
   });
+
+const normalizeMirrorsEffect = Effect.fn("build.normalizeMirrors")(function* (
+  inputs: ReadonlyArray<string>,
+) {
+  const seen = new Set<string>();
+  const result: Array<string> = [];
+
+  for (const input of inputs) {
+    const normalized = yield* Effect.try({
+      try: () => normalizeMirrorBase(input),
+      catch: (cause) =>
+        new InvalidMirrorError({
+          input,
+          cause,
+        }),
+    });
+    if (!seen.has(normalized)) {
+      seen.add(normalized);
+      result.push(normalized);
+    }
+  }
+
+  return result;
+});
 
 export const loadLuckyConfig = Effect.fn("build.loadLuckyConfig")(function* (
   configPath = "lucky.config.json",
@@ -130,6 +158,10 @@ export const buildSite = Effect.fn("build.buildSite")(function* (
       ? yield* normalizeChannelEffect(explicitOrFallbackChannel)
       : null;
 
+  const mirrors = yield* normalizeMirrorsEffect(
+    options.mirrors ?? fileConfig.mirrors ?? [],
+  );
+
   const entries = (yield* fs.exists(dataDir))
     ? yield* fs.readDirectory(dataDir)
     : [];
@@ -180,6 +212,7 @@ export const buildSite = Effect.fn("build.buildSite")(function* (
       defaultChannel,
       defaultMode,
       channels: summaries,
+      ...(mirrors.length > 0 ? { mirrors } : {}),
     },
     webBundle.indexHtml,
   );
@@ -211,6 +244,7 @@ export const buildSite = Effect.fn("build.buildSite")(function* (
     channels: summaries,
     defaultChannel,
     defaultMode,
+    mirrors,
     outDir,
   } satisfies BuildResult;
 });
